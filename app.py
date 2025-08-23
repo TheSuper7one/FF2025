@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import re
+import time
 
 st.set_page_config(page_title="Live Draft Cheat Sheet + Sleeper Tracker", layout="wide")
 
@@ -18,8 +19,10 @@ def safe_get_json(url, timeout=10):
         return None, str(e)
 
 def extract_draft_id(text):
-    m = re.search(r"(\d{12,})", text or "")
-    return m.group(1) if m else (text or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"(\d{9,})", text)  # allow 9+ digits
+    return match.group(1) if match else text.strip()
 
 # ---------- Normalize BDGE export ----------
 def normalize_rankings(file_path_or_buffer):
@@ -90,19 +93,6 @@ def current_pick_state(picks_made):
     pick_in_round = (current_pick_number - 1) % TOTAL_TEAMS + 1
     return current_pick_number, current_round, pick_in_round
 
-def future_picks_for_slot(current_pick_number, rounds_ahead=3):
-    out = []
-    start_round = (current_pick_number - 1) // TOTAL_TEAMS + 1
-    for r in range(rounds_ahead):
-        round_num = start_round + r
-        if round_num % 2 == 1:
-            pick_num = (round_num - 1) * TOTAL_TEAMS + MY_SLOT
-        else:
-            pick_num = (round_num - 1) * TOTAL_TEAMS + (TOTAL_TEAMS - MY_SLOT + 1)
-        picks_away = pick_num - current_pick_number
-        out.append((round_num, pick_num, picks_away))
-    return out
-
 def render_sleeper_row(round_num, picks, player_db):
     order = list(range(1, TOTAL_TEAMS + 1))
     if round_num % 2 == 0:
@@ -163,17 +153,13 @@ with right:
     draft_input = st.text_input("Sleeper Draft ID or URL")
     draft_id = extract_draft_id(draft_input)
 
-colA, colB, colC, colD = st.columns([1, 1, 1, 1])
+colA, colB = st.columns([1, 3])
 with colA:
     auto_refresh = st.checkbox("Auto refresh", value=True)
 with colB:
-    refresh_rate = st.slider("Every (sec)", 5, 60, 10)
-with colC:
-    view_mode = st.radio("View", ["Overall", "By Position"], horizontal=True)
-with colD:
-    hide_drafted = st.checkbox("Hide drafted", value=False)
+    refresh_rate = st.slider("Refresh every (sec)", 5, 60, 10)
 
-search_term = st.text_input("Search player")
+load_button = st.button("Load Draft Data")
 
 # Load rankings
 if uploaded_file:
@@ -185,11 +171,23 @@ if cheat_df.empty:
     st.warning("No rows detected from rankings CSV.")
     st.stop()
 
-if draft_id:
+# Auto-refresh logic
+if auto_refresh and draft_id and load_button is False:
+    st.experimental_rerun()
+
+if draft_id and (load_button or auto_refresh):
     player_db = load_player_db()
     picks, err = fetch_picks(draft_id)
     if err:
         st.warning(err)
-        picks = []
-    cheat_df = mark_drafted(cheat_df, picks, player_db)
-
+    elif not picks:
+        st.info("Draft found, but no picks yet. Waiting for draft to start…")
+    else:
+        cheat_df = mark_drafted(cheat_df, picks, player_db)
+        st.dataframe(style_cheat_sheet(cheat_df), use_container_width=True)
+        st.markdown("### Draft Board")
+        for r in range(1, ((len(picks) // TOTAL_TEAMS) + 2)):
+            st.markdown(render_sleeper_row(r, picks, player_db), unsafe_allow_html=True)
+    if auto_refresh:
+        time.sleep(refresh_rate)
+        st.experimental_rerun()
