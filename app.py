@@ -3,7 +3,6 @@ import pandas as pd
 import requests
 import re
 import unicodedata
-from streamlit_autorefresh import st_autorefresh  # timed refresh helper
 
 st.set_page_config(page_title="Live Draft Rankings Sync", layout="wide")
 st.title("📊 Live Draft Rankings Sync — Excel‑Style Board + Live Sleeper Sync")
@@ -134,7 +133,7 @@ interval = st.slider("Refresh interval (seconds)", 5, 30, 10)
 show_drafted = st.toggle("Show Drafted Players", value=False)
 
 if auto_sync:
-    st_autorefresh(interval=interval * 1000, key="autorefresh")
+    st.autorefresh(interval=interval * 1000, key="autorefresh")
 
 # --- Load rankings ---
 if uploaded_file:
