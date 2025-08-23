@@ -67,12 +67,20 @@ def extract_draft_id(url_or_id):
     m = re.search(r"draft/(?:nfl/)?(\d+)", url_or_id)
     return m.group(1) if m else url_or_id.strip()
 
+# --- Live draft pick fetching (no caching so it updates every refresh) ---
 def fetch_raw_picks_json(draft_id):
+    """Always fetch fresh picks from Sleeper for the given draft_id."""
     url = f"https://api.sleeper.app/v1/draft/{draft_id}/picks"
-    r = requests.get(url)
-    return r.json() if r.status_code == 200 else []
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            return r.json()
+    except Exception as e:
+        st.warning(f"Error fetching picks: {e}")
+    return []
 
 def fetch_drafted_ids(draft_id):
+    """Return a list of player_ids that have been drafted so far."""
     data = fetch_raw_picks_json(draft_id)
     return [p.get("player_id") for p in data if "player_id" in p]
 
@@ -191,5 +199,6 @@ if raw_df is not None:
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — check GitHub URL.")
+
 
 
