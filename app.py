@@ -232,4 +232,4 @@ if raw_df is not None:
         with st.expander("⚠️ Players not matched to Sleeper IDs"):
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
-    st.info("
+    st.info("No rankings available — upload a file or check GitHub URL.")
