@@ -8,8 +8,8 @@ from io import StringIO
 # ---------------------------
 st.set_page_config(page_title="Fantasy Draft Board", layout="wide")
 
-# 🔹 Replace this with your actual RAW GitHub CSV URL
-DEFAULT_CSV_URL = "https://raw.githubusercontent.com/<your-username>/<your-repo>/main/<path-to-rankings>.csv"
+# 🔹 Your fixed PPR rankings CSV in GitHub
+DEFAULT_CSV_URL = "https://raw.githubusercontent.com/TheSuper7one/FF2025/refs/heads/main/rankings.csv"
 
 REQUIRED_COLS = ["Rank", "Player", "Position", "NFL Team"]
 
@@ -68,15 +68,15 @@ def render_board(df: pd.DataFrame):
 
         st.markdown(f"### {pos}")
         st.dataframe(
-            pos_df.style.apply(style_row, axis=1),
+            pos_df[REQUIRED_COLS].style.apply(style_row, axis=1),
             use_container_width=True
         )
 
 # ---------------------------
 # MAIN
 # ---------------------------
-st.title("🏈 Fantasy Draft Board (Base Version)")
-st.caption("Loads default PPR rankings from GitHub and displays them with position colors.")
+st.title("🏈 Fantasy Draft Board (PPR Rankings)")
+st.caption("Always loads the latest PPR rankings from GitHub.")
 
 df = load_rankings(DEFAULT_CSV_URL)
 
