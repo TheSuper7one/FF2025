@@ -46,6 +46,7 @@ def get_sleeper_players():
 def load_default_rankings():
     return pd.read_csv(GITHUB_RAW_URL)
 
+@st.cache_data(show_spinner=False)
 def parse_rankings(df):
     blocks = {"OVERALL": 0, "QB": 5, "RB": 10, "WR": 15, "TE": 20, "DEF": 25, "K": 30}
     all_players, valid_positions, debug_rows = [], [], []
@@ -69,23 +70,17 @@ def extract_draft_id(url_or_id):
     return m.group(1) if m else url_or_id.strip()
 
 # --- Live draft pick fetching with short TTL cache ---
-@st.cache_data(ttl=3, show_spinner=False)  # cache expires every 3 seconds
-def fetch_raw_picks_json(draft_id):
-    """Fetch picks from Sleeper for the given draft_id, refreshing every TTL seconds."""
+@st.cache_data(ttl=REFRESH_INTERVAL, show_spinner=False)
+def fetch_drafted_ids(draft_id):
+    """Return a list of player_ids that have been drafted so far."""
     url = f"https://api.sleeper.app/v1/draft/{draft_id}/picks"
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=5)
         if r.status_code == 200:
-            return r.json()
+            return [p.get("player_id") for p in r.json() if "player_id" in p]
     except Exception as e:
         st.warning(f"Error fetching picks: {e}")
     return []
-
-@st.cache_data(ttl=3, show_spinner=False)  # also expires every 3 seconds
-def fetch_drafted_ids(draft_id):
-    """Return a list of player_ids that have been drafted so far."""
-    data = fetch_raw_picks_json(draft_id)
-    return [p.get("player_id") for p in data if "player_id" in p]
 
 # --- Inputs ---
 draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
@@ -103,7 +98,10 @@ if raw_df is not None:
     rankings, debug_table = parse_rankings(raw_df)
     rankings["norm_name"] = rankings["Player"].apply(apply_alias)
     rankings["NFL Team"] = rankings["NFL Team"].fillna("").astype(str).str.upper()
-    sleeper_df = get_sleeper_players()
+
+    if "sleeper_players" not in st.session_state:
+        st.session_state["sleeper_players"] = get_sleeper_players()
+    sleeper_df = st.session_state["sleeper_players"]
 
     # Strict match
     strict = rankings.merge(
@@ -155,7 +153,7 @@ if raw_df is not None:
     pos_text_colors = {
         "RB": "darkred",
         "WR": "darkgreen",
-        "QB": "#66b2ff",  # lighter blue for dark background
+        "QB": "#66b2ff",
         "TE": "violet",
         "DEF": "white",
         "K": "white"
@@ -170,7 +168,6 @@ if raw_df is not None:
             axis=0
         )
 
-    # Display board with 15 visible rows
     rows_to_show = 15
     row_height_px = 35
     styled_df = style_player_column(visible_df[["Rank", "Player", "Pos", "NFL Team"]])
@@ -182,15 +179,12 @@ if raw_df is not None:
     if draft_url.strip():
         st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
 
-    # --- Debug section below board ---
     with st.expander("📋 Debug Info"):
         if draft_url.strip():
             st.write("🛠 DEBUG — Parsed Draft ID:", draft_id)
-            st.write("🛠 DEBUG — Raw /picks JSON:", fetch_raw_picks_json(draft_id))
             st.write("🛠 DEBUG — Drafted IDs from Sleeper:", drafted_ids)
         st.table(debug_table)
 
-    # Only show unmatched players if there are any
     unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
     if not unmatched.empty:
         unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
@@ -199,21 +193,11 @@ if raw_df is not None:
 else:
     st.info("No rankings available — check GitHub URL.")
 
-# --- Auto-rerun for live sync (works on older Streamlit) ---
+# --- Auto-refresh without sleep ---
 if draft_url.strip():
-    # Sleep for REFRESH_INTERVAL seconds, then trigger a rerun
-    time.sleep(REFRESH_INTERVAL)
-    try:
-        # Newer Streamlit
-        st.rerun()
-    except Exception:
-        # Fallback for older versions
+    if "last_refresh" not in st.session_state:
+        st.session_state["last_refresh"] = time.time()
+    now = time.time()
+    if now - st.session_state["last_refresh"] > REFRESH_INTERVAL:
+        st.session_state["last_refresh"] = now
         st.experimental_rerun()
-
-
-
-
-
-
-
-
