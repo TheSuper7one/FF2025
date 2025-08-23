@@ -5,9 +5,12 @@ import re
 import unicodedata
 
 st.set_page_config(page_title="Live Draft Rankings Sync", layout="wide")
-st.title("📊 Live Draft Rankings Sync — Auto ID Mapping")
+st.title("📊 Live Draft Rankings Sync — Auto ID Mapping + GitHub Fallback")
 
-# --- Helper: normalize names for matching ---
+# --- CONFIG ---
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/yourusername/yourrepo/main/rankings.csv"
+
+# --- Helper: normalize names ---
 def normalize_name(name):
     if not isinstance(name, str):
         return ""
@@ -48,7 +51,7 @@ def fetch_drafted_ids(draft_id):
     return [p.get("player_id") for p in picks if "player_id" in p]
 
 # --- Inputs ---
-uploaded_file = st.file_uploader("Upload rankings.csv (must have 'Player' column)", type="csv")
+uploaded_file = st.file_uploader("Upload rankings.csv (optional — will use GitHub default if empty)", type="csv")
 draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 auto_sync = st.toggle("Auto-refresh")
 interval = st.slider("Refresh interval (seconds)", 5, 30, 10)
@@ -56,18 +59,27 @@ interval = st.slider("Refresh interval (seconds)", 5, 30, 10)
 if auto_sync:
     st_autorefresh = st.autorefresh(interval=interval * 1000, key="autorefresh")
 
-# --- Main logic ---
+# --- Load rankings ---
 if uploaded_file:
     rankings = pd.read_csv(uploaded_file)
+else:
+    try:
+        rankings = pd.read_csv(GITHUB_RAW_URL)
+        st.caption(f"📂 Loaded default rankings from GitHub: {GITHUB_RAW_URL}")
+    except Exception as e:
+        st.error(f"Could not load default rankings from GitHub: {e}")
+        rankings = None
 
+# --- Main logic ---
+if rankings is not None:
     if "Player" not in rankings.columns:
-        st.error("Your rankings.csv must have a 'Player' column.")
+        st.error("Rankings file must have a 'Player' column.")
     else:
         # Normalize and map IDs
         rankings["norm_name"] = rankings["Player"].apply(normalize_name)
         sleeper_df = get_sleeper_players()
         merged = rankings.merge(
-            sleeper_df[["Sleeper_ID", "norm_name"]],
+            sleeper_df[["Sleeper_ID", "norm_name", "Pos"]],
             on="norm_name",
             how="left"
         )
@@ -111,11 +123,10 @@ if uploaded_file:
         if auto_sync:
             st.caption(f"🔄 Auto-refreshing every {interval} seconds…")
 
-        # Show unmatched players for awareness
+        # Show unmatched players
         unmatched = merged[merged["Sleeper_ID"].isna()]
         if not unmatched.empty:
             with st.expander("⚠️ Players not matched to Sleeper IDs"):
                 st.write(unmatched[["Player"]])
-
 else:
-    st.info("Upload your rankings.csv to view your draft board.")
+    st.info("No rankings available — upload a file or check GitHub URL.")
