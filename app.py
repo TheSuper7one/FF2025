@@ -64,19 +64,17 @@ def parse_rankings(df):
     return pd.concat(all_players, ignore_index=True), pd.DataFrame(debug_rows)
 
 def extract_draft_id(url_or_id):
-    # Handles both .../draft/123 and .../draft/nfl/123
     m = re.search(r"draft/(?:nfl/)?(\d+)", url_or_id)
     return m.group(1) if m else url_or_id.strip()
 
-def fetch_drafted_ids(draft_id):
+def fetch_raw_picks_json(draft_id):
     url = f"https://api.sleeper.app/v1/draft/{draft_id}/picks"
     r = requests.get(url)
-    if r.status_code == 200:
-        data = r.json()
-        # Deep debug: show raw JSON from Sleeper
-        st.write("🛠 DEBUG — Raw /picks JSON:", data)
-        return [p.get("player_id") for p in data if "player_id" in p]
-    return []
+    return r.json() if r.status_code == 200 else []
+
+def fetch_drafted_ids(draft_id):
+    data = fetch_raw_picks_json(draft_id)
+    return [p.get("player_id") for p in data if "player_id" in p]
 
 # --- Inputs ---
 draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
@@ -137,14 +135,24 @@ if raw_df is not None:
     filtered = filtered.sort_values(by=["has_id", "Rank"], ascending=[False, True])
     filtered = filtered.drop_duplicates(subset=["norm_name"], keep="first").drop(columns=["has_id"])
 
-    # Draft sync
+    # Draft sync or mock mode
     draft_id = extract_draft_id(draft_url) if draft_url else None
-    drafted_ids = fetch_drafted_ids(draft_id) if draft_id else []
+    drafted_ids = []
 
-    # Debug lines only when draft URL is entered
-    if draft_url.strip():
-        st.write("🛠 DEBUG — Parsed Draft ID:", draft_id)
-        st.write("🛠 DEBUG — Drafted IDs from Sleeper:", drafted_ids)
+    if draft_id:
+        drafted_ids = fetch_drafted_ids(draft_id)
+    else:
+        # Mock mode: manual pick simulator
+        st.subheader("🛠 Mock Draft Mode — Manual Picks")
+        if "mock_picks" not in st.session_state:
+            st.session_state.mock_picks = []
+        available_names = filtered["Player"].tolist()
+        pick = st.selectbox("Select player to draft:", ["--"] + available_names)
+        if pick != "--" and st.button("Draft Player"):
+            pid = filtered.loc[filtered["Player"] == pick, "Sleeper_ID"].values[0]
+            if pid not in st.session_state.mock_picks:
+                st.session_state.mock_picks.append(pid)
+        drafted_ids = st.session_state.mock_picks
 
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
 
@@ -152,8 +160,8 @@ if raw_df is not None:
     visible_df = filtered[~filtered["Drafted"]].copy()
     visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
 
-    # Display board with 20 visible rows
-    rows_to_show = 20
+    # Display board with 15 visible rows
+    rows_to_show = 15
     row_height_px = 35
     st.dataframe(visible_df[["Rank", "Player", "Pos", "NFL Team"]],
                  use_container_width=True,
@@ -162,8 +170,14 @@ if raw_df is not None:
     if draft_url.strip():
         st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
 
-    # Debug info moved below
-    with st.expander("📋 Parsing Debug Info"):
+    # --- Debug section below board ---
+    with st.expander("📋 Debug Info"):
+        if draft_url.strip():
+            st.write("🛠 DEBUG — Parsed Draft ID:", draft_id)
+            st.write("🛠 DEBUG — Raw /picks JSON:", fetch_raw_picks_json(draft_id))
+            st.write("🛠 DEBUG — Drafted IDs from Sleeper:", drafted_ids)
+        else:
+            st.write("🛠 DEBUG — Mock Drafted IDs:", drafted_ids)
         st.table(debug_table)
 
     unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
