@@ -195,7 +195,7 @@ if raw_df is not None:
             st.write("🛠 DEBUG — Parsed Draft ID:", draft_id)
             st.write("🛠 DEBUG — Raw /picks JSON:", fetch_raw_picks_json(draft_id))
             st.write("🛠 DEBUG — Drafted IDs from Sleeper:", drafted_ids)
-        else:
+else:
     st.write("🛠 DEBUG — Mock Drafted IDs:", drafted_ids)
 st.table(debug_table)
 
@@ -206,3 +206,4 @@ if not unmatched.empty:
         st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — check GitHub URL.")
+
