@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
 import requests
-import time
 import re
 
-st.set_page_config(page_title="Live Draft Cheat Sheet + Sleeper-Style Tracker", layout="wide")
+st.set_page_config(page_title="Live Draft Cheat Sheet + Sleeper Tracker", layout="wide")
 
 # ---------- Helpers ----------
 def safe_get_json(url, timeout=10):
@@ -23,8 +22,8 @@ def extract_draft_id(text):
     return m.group(1) if m else (text or "").strip()
 
 # ---------- Normalize BDGE export ----------
-def normalize_rankings(uploaded_file):
-    df = pd.read_csv(uploaded_file)
+def normalize_rankings(file_path_or_buffer):
+    df = pd.read_csv(file_path_or_buffer)
     sections = {
         "OVERALL": 0,
         "QB": 5,
@@ -114,3 +113,83 @@ def render_sleeper_row(round_num, picks, player_db):
         overall_pick_no = (round_num - 1) * TOTAL_TEAMS + slot
         pdata = by_pick_no.get(overall_pick_no)
         if pdata and pdata.get("player_id"):
+            pid = str(pdata["player_id"])
+            name = player_db.get(pid, {}).get("full_name", "Unknown")
+            pos = player_db.get(pid, {}).get("position", "")
+            txt = f"{name} {pos}".strip()
+            style = (
+                "background-color:#23272a;color:#aab2bd;padding:6px 8px;"
+                "border-radius:6px;flex:1;text-align:center;font-size:0.8em;"
+                "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+            )
+        else:
+            txt = str(slot)
+            style = (
+                "background-color:#3a3d42;color:#ffffff;padding:6px 8px;"
+                "border-radius:6px;flex:1;text-align:center;font-weight:600;"
+                "font-size:0.85em;"
+            )
+        my_slot_even = (TOTAL_TEAMS - MY_SLOT + 1)
+        is_my_slot = (
+            (round_num % 2 == 1 and slot == MY_SLOT)
+            or (round_num % 2 == 0 and slot == my_slot_even)
+        )
+        if is_my_slot:
+            style += "border:2px solid #7289da;"
+        cells.append(f"<div style='{style}'>{txt}</div>")
+    return f"<div style='display:flex;gap:6px;margin:6px 0;'>{''.join(cells)}</div>"
+
+# ---------- Dark-mode styling ----------
+def style_cheat_sheet(df):
+    def style_row(row):
+        base_bg = "#2c2f33"
+        text_color = "#ffffff" if not row.Drafted else "#888888"
+        decoration = "line-through" if row.Drafted else "none"
+        return [
+            f"background-color: {base_bg}; color: {text_color}; text-decoration: {decoration}; font-size: 0.95em; padding: 6px;"
+            for _ in row
+        ]
+    return df.style.apply(style_row, axis=1).set_table_styles([
+        {"selector": "thead th", "props": [("background-color", "#23272a"), ("color", "#7289da"), ("font-weight", "bold"), ("font-size", "0.9em"), ("padding", "8px")]}
+    ])
+
+# ---------- UI ----------
+st.markdown("## 🏈 Live Draft Cheat Sheet + Sleeper Tracker")
+
+left, right = st.columns([2, 1])
+with left:
+    uploaded_file = st.file_uploader("Optional: Upload updated BDGE CSV to override", type="csv")
+with right:
+    draft_input = st.text_input("Sleeper Draft ID or URL")
+    draft_id = extract_draft_id(draft_input)
+
+colA, colB, colC, colD = st.columns([1, 1, 1, 1])
+with colA:
+    auto_refresh = st.checkbox("Auto refresh", value=True)
+with colB:
+    refresh_rate = st.slider("Every (sec)", 5, 60, 10)
+with colC:
+    view_mode = st.radio("View", ["Overall", "By Position"], horizontal=True)
+with colD:
+    hide_drafted = st.checkbox("Hide drafted", value=False)
+
+search_term = st.text_input("Search player")
+
+# Load rankings
+if uploaded_file:
+    cheat_df = normalize_rankings(uploaded_file)
+else:
+    cheat_df = normalize_rankings("rankings.csv")
+
+if cheat_df.empty:
+    st.warning("No rows detected from rankings CSV.")
+    st.stop()
+
+if draft_id:
+    player_db = load_player_db()
+    picks, err = fetch_picks(draft_id)
+    if err:
+        st.warning(err)
+        picks = []
+    cheat_df = mark_drafted(cheat_df, picks, player_db)
+
