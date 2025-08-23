@@ -1,200 +1,91 @@
 import streamlit as st
 import pandas as pd
 import requests
-import re
-import unicodedata
 import time
+from difflib import get_close_matches
 
-st.set_page_config(page_title="Live Draft Rankings Sync", layout="wide")
-st.title("📊 Live Draft Rankings Sync — Excel‑Style Board + Live Sleeper Sync")
+st.set_page_config(page_title="Fantasy Draft Board", layout="wide")
 
 # --- CONFIG ---
-GITHUB_RAW_URL = "https://raw.githubusercontent.com/TheSuper7one/FF2025/refs/heads/main/rankings.csv"
-NAME_ALIASES = {
-    "marvin harrison jr": "marvin harrison",
-    "cameron ward": "cam ward",
-    "cam ward": "cam ward"
-}
-REFRESH_INTERVAL = 3  # seconds — fast refresh during live draft
+RANKINGS_URL = "https://raw.githubusercontent.com/<your-username>/<your-repo>/main/rankings.csv"
+REFRESH_INTERVAL = 3  # seconds
 
-# --- Helpers ---
-def normalize_name(name):
-    if not isinstance(name, str):
-        return ""
-    name = name.lower()
-    name = ''.join(c for c in unicodedata.normalize('NFD', name)
-                   if unicodedata.category(c) != 'Mn')
-    name = re.sub(r"[^\w\s]", "", name)
-    return re.sub(r"\s+", " ", name).strip()
-
-def apply_alias(name):
-    norm = normalize_name(name)
-    return NAME_ALIASES.get(norm, norm)
-
-@st.cache_data(show_spinner=False)
-def get_sleeper_players():
-    players = requests.get("https://api.sleeper.app/v1/players/nfl").json()
-    return pd.DataFrame([{
-        "Sleeper_ID": pid,
-        "Sleeper_Name": f"{pdata.get('first_name','')} {pdata.get('last_name','')}".strip(),
-        "Sleeper_Pos": pdata.get("position", "") or "",
-        "Sleeper_Team": pdata.get("team", "") or "",
-        "norm_name": normalize_name(f"{pdata.get('first_name','')} {pdata.get('last_name','')}")
-    } for pid, pdata in players.items()])
-
-@st.cache_data(show_spinner=False)
-def load_default_rankings():
-    return pd.read_csv(GITHUB_RAW_URL)
-
-@st.cache_data(show_spinner=False)
-def parse_rankings(df):
-    blocks = {"OVERALL": 0, "QB": 5, "RB": 10, "WR": 15, "TE": 20, "DEF": 25, "K": 30}
-    all_players, valid_positions, debug_rows = [], [], []
-    for pos_name, start_col in blocks.items():
-        block_df = df.iloc[:, start_col:start_col + 4]
-        cols_found, rows_found = block_df.shape[1], block_df.dropna(subset=[block_df.columns[1]]).shape[0]
-        status = "✅" if cols_found == 4 and rows_found > 0 else "⚠️"
-        if status == "✅":
-            valid_positions.append(pos_name)
-            block_df.columns = ["Rank", "Player", "Sheet_Pos", "NFL Team"]
-            block_df["Rank"] = pd.to_numeric(block_df["Rank"], errors="coerce").astype("Int64")
-            block_df["Source_Pos"] = pos_name
-            all_players.append(block_df.dropna(subset=["Player"]))
-        debug_rows.append({"Position": pos_name, "Start Col": start_col, "Cols Found": cols_found,
-                           "Rows Found": rows_found, "Status": status})
-    st.session_state["valid_positions"] = valid_positions
-    return pd.concat(all_players, ignore_index=True), pd.DataFrame(debug_rows)
-
-def extract_draft_id(url_or_id):
-    m = re.search(r"draft/(?:nfl/)?(\d+)", url_or_id)
-    return m.group(1) if m else url_or_id.strip()
-
-# --- Live draft pick fetching with short TTL cache ---
-@st.cache_data(ttl=REFRESH_INTERVAL, show_spinner=False)
-def fetch_drafted_ids(draft_id):
-    """Return a list of player_ids that have been drafted so far."""
+# --- HELPERS ---
+@st.cache_data(ttl=REFRESH_INTERVAL)
+def fetch_drafted_ids(draft_id: str):
+    """Fetch drafted player IDs from Sleeper."""
     url = f"https://api.sleeper.app/v1/draft/{draft_id}/picks"
     try:
-        r = requests.get(url, timeout=5)
-        if r.status_code == 200:
-            return [p.get("player_id") for p in r.json() if "player_id" in p]
-    except Exception as e:
-        st.warning(f"Error fetching picks: {e}")
-    return []
+        picks = requests.get(url, timeout=10).json()
+        drafted_ids = {str(pick.get("player_id")) for pick in picks if pick.get("player_id")}
+        ts = time.strftime("%H:%M:%S")
+        return drafted_ids, ts
+    except Exception:
+        return set(), time.strftime("%H:%M:%S")
 
-# --- Inputs ---
-draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
+@st.cache_data
+def load_rankings():
+    """Load rankings from GitHub CSV."""
+    df = pd.read_csv(RANKINGS_URL)
+    df.columns = [c.strip().lower() for c in df.columns]
+    return df
 
-# --- Load rankings from GitHub ---
-try:
-    raw_df = load_default_rankings()
-    st.caption("📂 Loaded default rankings from GitHub")
-except Exception as e:
-    st.error(f"Could not load default rankings: {e}")
-    raw_df = None
+# --- APP LAYOUT ---
+st.title("Fantasy Football Draft Board")
 
-# --- Main logic ---
-if raw_df is not None:
-    rankings, debug_table = parse_rankings(raw_df)
-    rankings["norm_name"] = rankings["Player"].apply(apply_alias)
-    rankings["NFL Team"] = rankings["NFL Team"].fillna("").astype(str).str.upper()
+# Input League or Draft ID
+league_id = st.text_input("Enter Sleeper League ID (or leave blank if you have a Draft ID)", "")
+draft_id = st.text_input("Enter Sleeper Draft ID (optional if League ID provided)", "")
 
-    if "sleeper_players" not in st.session_state:
-        st.session_state["sleeper_players"] = get_sleeper_players()
-    sleeper_df = st.session_state["sleeper_players"]
+# Resolve Draft ID from League ID
+if league_id and not draft_id:
+    try:
+        drafts = requests.get(f"https://api.sleeper.app/v1/league/{league_id}/drafts", timeout=10).json()
+        if drafts:
+            draft_id = drafts[0]["draft_id"]
+    except Exception:
+        st.error("Failed to resolve Draft ID from League ID.")
 
-    # Strict match
-    strict = rankings.merge(
-        sleeper_df[["Sleeper_ID", "norm_name", "Sleeper_Pos", "Sleeper_Team"]],
-        left_on=["norm_name", "Sheet_Pos", "NFL Team"],
-        right_on=["norm_name", "Sleeper_Pos", "Sleeper_Team"],
-        how="left"
-    )
-    # Relaxed match
-    unmatched_mask = strict["Sleeper_ID"].isna()
-    if unmatched_mask.any():
-        relaxed = rankings.loc[unmatched_mask].merge(
-            sleeper_df[["Sleeper_ID", "norm_name", "Sleeper_Pos"]],
-            left_on=["norm_name", "Sheet_Pos"],
-            right_on=["norm_name", "Sleeper_Pos"],
-            how="left"
-        )
-        strict.loc[unmatched_mask, "Sleeper_ID"] = relaxed["Sleeper_ID"].values
-    merged = strict
+# Load rankings
+rankings = load_rankings()
 
-    # Position filter buttons
-    positions = st.session_state.get("valid_positions", [])
-    if positions:
-        cols = st.columns(len(positions))
-        if "active_pos" not in st.session_state:
-            st.session_state.active_pos = positions[0]
-        for i, pos in enumerate(positions):
-            if cols[i].button(pos):
-                st.session_state.active_pos = pos
-    else:
-        st.warning("No valid position blocks found.")
+# Fetch drafted players
+if draft_id:
+    drafted_ids, ts = fetch_drafted_ids(draft_id)
+    
+    # Fetch Sleeper player data once
+    @st.cache_data
+    def fetch_players():
+        return requests.get("https://api.sleeper.app/v1/players/nfl", timeout=10).json()
 
-    active = st.session_state.active_pos
-    filtered = merged[merged["Source_Pos"] == active].copy()
-    filtered["has_id"] = filtered["Sleeper_ID"].notna().astype(int)
-    filtered = filtered.sort_values(by=["has_id", "Rank"], ascending=[False, True])
-    filtered = filtered.drop_duplicates(subset=["norm_name"], keep="first").drop(columns=["has_id"])
+    sleeper_players = fetch_players()
 
-    # Draft sync
-    draft_id = extract_draft_id(draft_url) if draft_url else None
-    drafted_ids = fetch_drafted_ids(draft_id) if draft_id else []
-    filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
+    # Map player names in rankings to Sleeper IDs
+    def name_to_id(name, position=None):
+        name_key = name.lower().replace(".", "").replace("'", "").strip()
+        for pid, pdata in sleeper_players.items():
+            if pdata.get("full_name") and pdata["full_name"].lower().replace(".", "").replace("'", "").strip() == name_key:
+                if not position or pdata.get("position", "").lower() == position.lower():
+                    return pid
+        # fallback fuzzy
+        matches = get_close_matches(name_key, [pdata.get("full_name", "").lower() for pdata in sleeper_players.values()], n=1, cutoff=0.9)
+        if matches:
+            for pid, pdata in sleeper_players.items():
+                if pdata.get("full_name", "").lower() == matches[0]:
+                    return pid
+        return None
 
-    # Hide drafted players entirely
-    visible_df = filtered[~filtered["Drafted"]].copy()
-    visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
+    rankings["sleeper_id"] = rankings.apply(lambda r: name_to_id(r["player"], r.get("pos")), axis=1)
+    filtered = rankings[~rankings["sleeper_id"].isin(drafted_ids)]
 
-    # --- Position-based text color mapping ---
-    pos_text_colors = {
-        "RB": "darkred",
-        "WR": "darkgreen",
-        "QB": "#66b2ff",
-        "TE": "violet",
-        "DEF": "white",
-        "K": "white"
-    }
-
-    def style_player_column(df):
-        return df.style.apply(
-            lambda col: [
-                f"color: {pos_text_colors.get(pos, 'black')}; font-weight: bold" if col.name == "Player" else ""
-                for pos in df["Pos"]
-            ],
-            axis=0
-        )
-
-    rows_to_show = 15
-    row_height_px = 35
-    styled_df = style_player_column(visible_df[["Rank", "Player", "Pos", "NFL Team"]])
-
-    st.dataframe(styled_df,
-                 use_container_width=True,
-                 height=rows_to_show * row_height_px)
-
-    if draft_url.strip():
-        st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
-
-    with st.expander("📋 Debug Info"):
-        if draft_url.strip():
-            st.write("🛠 DEBUG — Parsed Draft ID:", draft_id)
-            st.write("🛠 DEBUG — Drafted IDs from Sleeper:", drafted_ids)
-        st.table(debug_table)
-
-    unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
-    if not unmatched.empty:
-        unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
-        with st.expander("⚠️ Players not matched to Sleeper IDs"):
-            st.write(unmatched[["Player", "Pos", "NFL Team"]])
+    st.subheader("Available Players")
+    st.dataframe(filtered.reset_index(drop=True))
+    st.caption(f"Last synced with Sleeper: {ts}")
 else:
-    st.info("No rankings available — check GitHub URL.")
+    st.info("Enter a League ID or Draft ID to sync live picks.")
 
-# --- Auto-refresh without sleep ---
-if draft_url.strip():
+# --- AUTO REFRESH ---
+if draft_id.strip():
     if "last_refresh" not in st.session_state:
         st.session_state["last_refresh"] = time.time()
     now = time.time()
