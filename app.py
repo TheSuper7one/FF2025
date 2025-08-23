@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import re
 import unicodedata
+from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Live Draft Rankings Sync", layout="wide")
 st.title("📊 Live Draft Rankings Sync — Excel‑Style Board + Live Sleeper Sync")
@@ -201,6 +202,7 @@ if raw_df is not None:
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — check GitHub URL.")
+
 
 
 
