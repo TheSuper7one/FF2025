@@ -129,6 +129,9 @@ draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 auto_sync = st.toggle("Auto-refresh")
 interval = st.slider("Refresh interval (seconds)", 5, 30, 10)
 
+# New toggle to show/hide drafted players
+show_drafted = st.toggle("Show Drafted Players", value=False)
+
 if auto_sync:
     st_autorefresh = st.autorefresh(interval=interval * 1000, key="autorefresh")
 
@@ -203,15 +206,20 @@ if raw_df is not None:
 
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
 
-    # Hide drafted players entirely
-    visible_df = filtered[~filtered["Drafted"]].copy()
+    # Apply toggle logic
+    if not show_drafted:
+        visible_df = filtered[~filtered["Drafted"]].copy()
+    else:
+        visible_df = filtered.copy()
 
     # Rename for cleaner UI
     visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
 
-    # Only show the columns we care about
-    display_cols = ["Rank", "Player", "Pos", "NFL Team"]
+    # Drafted column as checkmark
+    visible_df["Drafted"] = visible_df["Drafted"].apply(lambda x: "✅" if x else "")
 
+    # Display
+    display_cols = ["Rank", "Player", "Pos", "NFL Team", "Drafted"]
     st.dataframe(visible_df[display_cols], use_container_width=True)
 
     if auto_sync:
@@ -224,4 +232,4 @@ if raw_df is not None:
         with st.expander("⚠️ Players not matched to Sleeper IDs"):
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
-    st.info("No rankings available — upload a file or check GitHub URL.")
+    st.info("
