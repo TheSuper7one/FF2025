@@ -5,10 +5,10 @@ import re
 import unicodedata
 
 st.set_page_config(page_title="Live Draft Rankings Sync", layout="wide")
-st.title("📊 Live Draft Rankings Sync — Auto ID Mapping + GitHub Fallback")
+st.title("📊 Live Draft Rankings Sync — Auto ID Mapping + GitHub Fallback (Cached)")
 
 # --- CONFIG ---
-GITHUB_RAW_URL = "https://raw.githubusercontent.com/yourusername/yourrepo/main/rankings.csv"
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/TheSuper7one/FF2025/refs/heads/main/rankings.csv"
 
 # --- Helper: normalize names ---
 def normalize_name(name):
@@ -20,7 +20,7 @@ def normalize_name(name):
     name = re.sub(r"\s+", " ", name).strip()
     return name
 
-# --- Fetch Sleeper player database ---
+# --- Cached: fetch Sleeper player database ---
 @st.cache_data(show_spinner=False)
 def get_sleeper_players():
     url = "https://api.sleeper.app/v1/players/nfl"
@@ -36,6 +36,11 @@ def get_sleeper_players():
             "norm_name": normalize_name(full_name)
         })
     return pd.DataFrame(player_list)
+
+# --- Cached: load rankings from GitHub ---
+@st.cache_data(show_spinner=False)
+def load_default_rankings():
+    return pd.read_csv(GITHUB_RAW_URL)
 
 # --- Fetch drafted player IDs ---
 def extract_draft_id(url_or_id):
@@ -64,8 +69,8 @@ if uploaded_file:
     rankings = pd.read_csv(uploaded_file)
 else:
     try:
-        rankings = pd.read_csv(GITHUB_RAW_URL)
-        st.caption(f"📂 Loaded default rankings from GitHub: {GITHUB_RAW_URL}")
+        rankings = load_default_rankings()
+        st.caption("📂 Loaded default rankings from GitHub (cached for this session)")
     except Exception as e:
         st.error(f"Could not load default rankings from GitHub: {e}")
         rankings = None
