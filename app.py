@@ -14,6 +14,7 @@ NAME_ALIASES = {
     "cameron ward": "cam ward",
     "cam ward": "cam ward"
 }
+REFRESH_INTERVAL = 3  # seconds — fast refresh during live draft
 
 # --- Helpers ---
 def normalize_name(name):
@@ -74,11 +75,9 @@ def fetch_drafted_ids(draft_id):
 # --- Inputs ---
 draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 
-# Auto-refresh
-auto_sync = st.toggle("Auto-refresh")
-interval = st.slider("Refresh interval (seconds)", 5, 30, 10)
-if auto_sync:
-    st.components.v1.html(f"<meta http-equiv='refresh' content='{interval}'>", height=0)
+# Conditional fast auto-refresh: only when draft URL is entered
+if draft_url.strip():
+    st.components.v1.html(f"<meta http-equiv='refresh' content='{REFRESH_INTERVAL}'>", height=0)
 
 # --- Load rankings from GitHub ---
 try:
@@ -133,7 +132,14 @@ if raw_df is not None:
     filtered = filtered.drop_duplicates(subset=["norm_name"], keep="first").drop(columns=["has_id"])
 
     # Draft sync
-    drafted_ids = fetch_drafted_ids(extract_draft_id(draft_url)) if draft_url else []
+    draft_id = extract_draft_id(draft_url) if draft_url else None
+    drafted_ids = fetch_drafted_ids(draft_id) if draft_id else []
+
+    # Debug lines only when draft URL is entered
+    if draft_url.strip():
+        st.write("🛠 DEBUG — Parsed Draft ID:", draft_id)
+        st.write("🛠 DEBUG — Drafted IDs from Sleeper:", drafted_ids)
+
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
 
     # Hide drafted players entirely
@@ -147,8 +153,8 @@ if raw_df is not None:
                  use_container_width=True,
                  height=rows_to_show * row_height_px)
 
-    if auto_sync:
-        st.caption(f"🔄 Auto-refreshing every {interval} seconds…")
+    if draft_url.strip():
+        st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
 
     # Debug info moved below
     with st.expander("📋 Parsing Debug Info"):
