@@ -12,8 +12,8 @@ GITHUB_RAW_URL = "https://raw.githubusercontent.com/TheSuper7one/FF2025/refs/hea
 
 # --- Manual name overrides for Sleeper mapping ---
 NAME_ALIASES = {
-    "marvin harrison jr": "marvin harrison",  # if Sleeper lists Jr as "Marvin Harrison"
-    "cameron ward": "cam ward",               # map to Sleeper's listing
+    "marvin harrison jr": "marvin harrison",
+    "cameron ward": "cam ward",
     "cam ward": "cam ward"
 }
 
@@ -22,7 +22,8 @@ def normalize_name(name):
     if not isinstance(name, str):
         return ""
     name = name.lower()
-    name = ''.join(c for c in unicodedata.normalize('NFD', name) if unicodedata.category(c) != 'Mn')
+    name = ''.join(c for c in unicodedata.normalize('NFD', name)
+                   if unicodedata.category(c) != 'Mn')
     name = re.sub(r"[^\w\s]", "", name)
     name = re.sub(r"\s+", " ", name).strip()
     return name
@@ -57,7 +58,7 @@ def get_sleeper_players():
 def load_default_rankings():
     return pd.read_csv(GITHUB_RAW_URL, skiprows=1)
 
-# --- Parse multi‑section CSV into one DataFrame with debug + skip invalid ---
+# --- Parse multi‑section CSV into one DataFrame ---
 def parse_rankings(df):
     blocks = {
         "OVERALL": 0,
@@ -121,7 +122,9 @@ def fetch_drafted_ids(draft_id):
     return [p.get("player_id") for p in picks if "player_id" in p]
 
 # --- Inputs ---
-uploaded_file = st.file_uploader("Upload rankings.csv (optional — will use GitHub default if empty)", type="csv")
+uploaded_file = st.file_uploader(
+    "Upload rankings.csv (optional — will use GitHub default if empty)", type="csv"
+)
 draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 auto_sync = st.toggle("Auto-refresh")
 interval = st.slider("Refresh interval (seconds)", 5, 30, 10)
@@ -146,12 +149,11 @@ if raw_df is not None:
 
     # Normalize with aliases
     rankings["norm_name"] = rankings["Player"].apply(apply_alias)
-    # Normalize team codes (ensure string)
     rankings["NFL Team"] = rankings["NFL Team"].fillna("").astype(str).str.upper()
 
     sleeper_df = get_sleeper_players()
-    # Two-step merge to avoid name collisions:
-    # 1) Try strict match on name + position + team
+
+    # Strict match: name + position + team
     strict_merged = rankings.merge(
         sleeper_df[["Sleeper_ID", "norm_name", "Sleeper_Pos", "Sleeper_Team"]],
         left_on=["norm_name", "Sheet_Pos", "NFL Team"],
@@ -159,7 +161,7 @@ if raw_df is not None:
         how="left"
     )
 
-    # 2) For unmatched rows, relax to name + position only
+    # Relaxed match: name + position only
     unmatched_mask = strict_merged["Sleeper_ID"].isna()
     if unmatched_mask.any():
         relaxed = rankings.loc[unmatched_mask].merge(
@@ -168,12 +170,11 @@ if raw_df is not None:
             right_on=["norm_name", "Sleeper_Pos"],
             how="left"
         )
-        # Fill in IDs where strict failed but relaxed succeeded
         strict_merged.loc[unmatched_mask, "Sleeper_ID"] = relaxed["Sleeper_ID"].values
 
     merged = strict_merged
 
-    # --- Position filter buttons (only valid ones) ---
+    # Position filter buttons
     positions = st.session_state.get("valid_positions", [])
     if positions:
         cols = st.columns(len(positions))
@@ -185,15 +186,10 @@ if raw_df is not None:
     else:
         st.warning("No valid position blocks found in the rankings file.")
 
-    # Build the view
     active = st.session_state.active_pos
-
-    # Filter by active position
     filtered = merged[merged["Source_Pos"] == active].copy()
 
-    # Safety dedupe inside the view:
-    # - Prefer rows with a Sleeper_ID (if any nulls remain)
-    # - Then prefer lower Rank
+    # Deduplicate: prefer rows with Sleeper_ID, then lower Rank
     filtered["has_id"] = filtered["Sleeper_ID"].notna().astype(int)
     filtered = filtered.sort_values(by=["has_id", "Rank"], ascending=[False, True])
     filtered = filtered.drop_duplicates(subset=["norm_name"], keep="first")
@@ -205,7 +201,6 @@ if raw_df is not None:
         draft_id = extract_draft_id(draft_url)
         drafted_ids = fetch_drafted_ids(draft_id)
 
-    # Mark drafted players
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
 
     # Style drafted players
@@ -222,7 +217,7 @@ if raw_df is not None:
     if auto_sync:
         st.caption(f"🔄 Auto-refreshing every {interval} seconds…")
 
-    # Show unmatched players (deduped by name for clarity)
+    # Show unmatched players
     unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
     if not unmatched.empty:
         with st.expander("⚠️ Players not matched to Sleeper IDs"):
