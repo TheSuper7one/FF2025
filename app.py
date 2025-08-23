@@ -73,13 +73,14 @@ def fetch_drafted_ids(draft_id):
     return [p.get("player_id") for p in r.json()] if r.status_code == 200 else []
 
 # --- Inputs ---
-uploaded_file = st.file_uploader("Upload rankings.csv (optional)", type="csv")
+uploaded_file = st.file_uploader("Upload rankings.csv (optional — will use GitHub default if empty)", type="csv")
 draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
+
+# Simple, reliable auto-refresh (no extra packages)
 auto_sync = st.toggle("Auto-refresh")
 interval = st.slider("Refresh interval (seconds)", 5, 30, 10)
-show_drafted = st.toggle("Show Drafted Players", value=False)
 if auto_sync:
-    st.autorefresh(interval=interval * 1000, key="autorefresh")
+    st.components.v1.html(f"<meta http-equiv='refresh' content='{interval}'>", height=0)
 
 # --- Load rankings ---
 if uploaded_file:
@@ -99,12 +100,14 @@ if raw_df is not None:
     rankings["NFL Team"] = rankings["NFL Team"].fillna("").astype(str).str.upper()
     sleeper_df = get_sleeper_players()
 
+    # Strict match
     strict = rankings.merge(
         sleeper_df[["Sleeper_ID", "norm_name", "Sleeper_Pos", "Sleeper_Team"]],
         left_on=["norm_name", "Sheet_Pos", "NFL Team"],
         right_on=["norm_name", "Sleeper_Pos", "Sleeper_Team"],
         how="left"
     )
+    # Relaxed match
     unmatched_mask = strict["Sleeper_ID"].isna()
     if unmatched_mask.any():
         relaxed = rankings.loc[unmatched_mask].merge(
@@ -116,6 +119,7 @@ if raw_df is not None:
         strict.loc[unmatched_mask, "Sleeper_ID"] = relaxed["Sleeper_ID"].values
     merged = strict
 
+    # Position filter buttons
     positions = st.session_state.get("valid_positions", [])
     if positions:
         cols = st.columns(len(positions))
@@ -133,17 +137,21 @@ if raw_df is not None:
     filtered = filtered.sort_values(by=["has_id", "Rank"], ascending=[False, True])
     filtered = filtered.drop_duplicates(subset=["norm_name"], keep="first").drop(columns=["has_id"])
 
+    # Draft sync
     drafted_ids = fetch_drafted_ids(extract_draft_id(draft_url)) if draft_url else []
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
 
-    visible_df = filtered if show_drafted else filtered[~filtered["Drafted"]]
+    # Hide drafted players entirely
+    visible_df = filtered[~filtered["Drafted"]].copy()
     visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
-    visible_df["Drafted"] = visible_df["Drafted"].apply(lambda x: "✅" if x else "")
 
-    st.dataframe(visible_df[["Rank", "Player", "Pos", "NFL Team", "Drafted"]], use_container_width=True)
+    # Display only Rank, Player, Pos, Team
+    st.dataframe(visible_df[["Rank", "Player", "Pos", "NFL Team"]], use_container_width=True)
+
     if auto_sync:
         st.caption(f"🔄 Auto-refreshing every {interval} seconds…")
 
+    # Unmatched players debug
     unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
     if not unmatched.empty:
         unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
