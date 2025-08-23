@@ -63,7 +63,7 @@ def parse_rankings(df):
     return pd.concat(all_players, ignore_index=True), pd.DataFrame(debug_rows)
 
 def extract_draft_id(url_or_id):
-    # Now handles both .../draft/123 and .../draft/nfl/123
+    # Handles both .../draft/123 and .../draft/nfl/123
     m = re.search(r"draft/(?:nfl/)?(\d+)", url_or_id)
     return m.group(1) if m else url_or_id.strip()
 
@@ -72,7 +72,6 @@ def fetch_drafted_ids(draft_id):
     return [p.get("player_id") for p in r.json()] if r.status_code == 200 else []
 
 # --- Inputs ---
-uploaded_file = st.file_uploader("Upload rankings.csv (optional — will use GitHub default if empty)", type="csv")
 draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 
 # Auto-refresh
@@ -81,16 +80,13 @@ interval = st.slider("Refresh interval (seconds)", 5, 30, 10)
 if auto_sync:
     st.components.v1.html(f"<meta http-equiv='refresh' content='{interval}'>", height=0)
 
-# --- Load rankings ---
-if uploaded_file:
-    raw_df = pd.read_csv(uploaded_file, skiprows=1)
-else:
-    try:
-        raw_df = load_default_rankings()
-        st.caption("📂 Loaded default rankings from GitHub")
-    except Exception as e:
-        st.error(f"Could not load default rankings: {e}")
-        raw_df = None
+# --- Load rankings from GitHub ---
+try:
+    raw_df = load_default_rankings()
+    st.caption("📂 Loaded default rankings from GitHub")
+except Exception as e:
+    st.error(f"Could not load default rankings: {e}")
+    raw_df = None
 
 # --- Main logic ---
 if raw_df is not None:
@@ -164,4 +160,4 @@ if raw_df is not None:
         with st.expander("⚠️ Players not matched to Sleeper IDs"):
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
-    st.info("No rankings available — upload a file or check GitHub URL.")
+    st.info("No rankings available — check GitHub URL.")
