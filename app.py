@@ -43,7 +43,8 @@ def get_sleeper_players():
 
 @st.cache_data(show_spinner=False)
 def load_default_rankings():
-    return pd.read_csv(GITHUB_RAW_URL, skiprows=1)
+    # No skiprows — CSV already has proper header
+    return pd.read_csv(GITHUB_RAW_URL)
 
 def parse_rankings(df):
     blocks = {"OVERALL": 0, "QB": 5, "RB": 10, "WR": 15, "TE": 20, "DEF": 25, "K": 30}
@@ -135,25 +136,9 @@ if raw_df is not None:
     filtered = filtered.sort_values(by=["has_id", "Rank"], ascending=[False, True])
     filtered = filtered.drop_duplicates(subset=["norm_name"], keep="first").drop(columns=["has_id"])
 
-    # Draft sync or mock mode
+    # Draft sync
     draft_id = extract_draft_id(draft_url) if draft_url else None
-    drafted_ids = []
-
-    if draft_id:
-        drafted_ids = fetch_drafted_ids(draft_id)
-    else:
-        # Mock mode: manual pick simulator
-        st.subheader("🛠 Mock Draft Mode — Manual Picks")
-        if "mock_picks" not in st.session_state:
-            st.session_state.mock_picks = []
-        available_names = filtered["Player"].tolist()
-        pick = st.selectbox("Select player to draft:", ["--"] + available_names)
-        if pick != "--" and st.button("Draft Player"):
-            pid = filtered.loc[filtered["Player"] == pick, "Sleeper_ID"].values[0]
-            if pid not in st.session_state.mock_picks:
-                st.session_state.mock_picks.append(pid)
-        drafted_ids = st.session_state.mock_picks
-
+    drafted_ids = fetch_drafted_ids(draft_id) if draft_id else []
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
 
     # Hide drafted players entirely
@@ -195,15 +180,12 @@ if raw_df is not None:
             st.write("🛠 DEBUG — Parsed Draft ID:", draft_id)
             st.write("🛠 DEBUG — Raw /picks JSON:", fetch_raw_picks_json(draft_id))
             st.write("🛠 DEBUG — Drafted IDs from Sleeper:", drafted_ids)
-else:
-    st.write("🛠 DEBUG — Mock Drafted IDs:", drafted_ids)
-st.table(debug_table)
+        st.table(debug_table)
 
-unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
-if not unmatched.empty:
-    unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
-    with st.expander("⚠️ Players not matched to Sleeper IDs"):
-        st.write(unmatched[["Player", "Pos", "NFL Team"]])
+    unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
+    if not unmatched.empty:
+        unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
+        with st.expander("⚠️ Players not matched to Sleeper IDs"):
+            st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — check GitHub URL.")
-
