@@ -13,8 +13,8 @@ GITHUB_RAW_URL = "https://raw.githubusercontent.com/TheSuper7one/FF2025/refs/hea
 # --- Manual name overrides for Sleeper mapping ---
 NAME_ALIASES = {
     "marvin harrison jr": "marvin harrison",
-    "cameron ward": "cameron ward",  # adjust if Sleeper uses "cam ward"
-    "cam ward": "cameron ward"
+    "cameron ward": "cam ward",  # map to Sleeper's listing
+    "cam ward": "cam ward"
 }
 
 # --- Helper: normalize + alias ---
