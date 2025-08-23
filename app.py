@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import re
 import unicodedata
+import time
 
 st.set_page_config(page_title="Live Draft Rankings Sync", layout="wide")
 st.title("📊 Live Draft Rankings Sync — Excel‑Style Board + Live Sleeper Sync")
@@ -88,10 +89,6 @@ def fetch_drafted_ids(draft_id):
 
 # --- Inputs ---
 draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
-
-# Conditional fast auto-refresh: only when draft URL is entered
-if draft_url.strip():
-    st.experimental_autorefresh(interval=REFRESH_INTERVAL * 1000, key="live_refresh")
 
 # --- Load rankings from GitHub ---
 try:
@@ -201,6 +198,18 @@ if raw_df is not None:
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — check GitHub URL.")
+
+# --- Auto-rerun for live sync (works on older Streamlit) ---
+if draft_url.strip():
+    # Sleep for REFRESH_INTERVAL seconds, then trigger a rerun
+    time.sleep(REFRESH_INTERVAL)
+    try:
+        # Newer Streamlit
+        st.rerun()
+    except Exception:
+        # Fallback for older versions
+        st.experimental_rerun()
+
 
 
 
