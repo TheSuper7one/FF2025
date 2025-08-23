@@ -1,34 +1,43 @@
-import streamlit as st
-import pandas as pd
 import requests
+import streamlit as st
 
-# CONFIG
-LEAGUE_ID = st.text_input("Enter your Sleeper League ID")
-CSV_FILE = "rankings.csv"
+def get_sleeper_data(id_input):
+    """
+    Detects whether the ID is a league or draft and fetches the right data.
+    """
+    # Try league endpoint first
+    league_url = f"https://api.sleeper.app/v1/league/{id_input}"
+    league_resp = requests.get(league_url).json()
 
-@st.cache_data
-def load_rankings():
-    return pd.read_csv(CSV_FILE)
+    if league_resp and isinstance(league_resp, dict) and "league_id" in league_resp:
+        st.success("Detected: League ID ✅")
+        return {"type": "league", "data": league_resp}
 
-def get_draft_id(league_id):
-    url = f"https://api.sleeper.app/v1/league/{league_id}/drafts"
-    return requests.get(url).json()[0]["draft_id"]
+    # If league failed, try draft endpoint
+    draft_url = f"https://api.sleeper.app/v1/draft/{id_input}"
+    draft_resp = requests.get(draft_url).json()
 
-def get_drafted_players(draft_id):
-    url = f"https://api.sleeper.app/v1/draft/{draft_id}/picks"
-    picks = requests.get(url).json()
-    return {f"{p['metadata']['first_name']} {p['metadata']['last_name']}" 
-            for p in picks if "metadata" in p}
+    if draft_resp and isinstance(draft_resp, dict) and "draft_id" in draft_resp:
+        st.success("Detected: Draft ID (mock or real) ✅")
+        return {"type": "draft", "data": draft_resp}
 
-rankings = load_rankings()
+    # If both fail
+    st.error("Invalid ID — not a valid Sleeper league or draft.")
+    return None
 
-if LEAGUE_ID:
-    draft_id = get_draft_id(LEAGUE_ID)
-    drafted = get_drafted_players(draft_id)
-    available = rankings[~rankings["Player"].isin(drafted)]
+# Streamlit UI
+st.title("Sleeper Draft Board")
+id_input = st.text_input("Enter your Sleeper League ID or Draft ID:")
 
-    pos_filter = st.selectbox("Filter by position", ["ALL", "QB", "RB", "WR", "TE", "DEF", "K"])
-    if pos_filter != "ALL":
-        available = available[available["Position"] == pos_filter]
+if id_input:
+    result = get_sleeper_data(id_input)
+    if result:
+        st.write("Raw data:", result["data"])
+        # You can now branch your logic:
+        if result["type"] == "league":
+            # Fetch league rosters, draft_id, etc.
+            pass
+        elif result["type"] == "draft":
+            # Fetch picks directly from draft endpoint
+            pass
 
-    st.dataframe(available.sort_values("Rank"))
