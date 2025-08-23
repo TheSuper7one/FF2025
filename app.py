@@ -5,7 +5,7 @@ import re
 import unicodedata
 
 st.set_page_config(page_title="Live Draft Rankings Sync", layout="wide")
-st.title("📊 Live Draft Rankings Sync — Auto ID Mapping + GitHub Fallback (Cached)")
+st.title("📊 Live Draft Rankings Sync — Excel‑Style Board + Live Sleeper Sync")
 
 # --- CONFIG ---
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/TheSuper7one/FF2025/refs/heads/main/rankings.csv"
@@ -40,7 +40,28 @@ def get_sleeper_players():
 # --- Cached: load rankings from GitHub ---
 @st.cache_data(show_spinner=False)
 def load_default_rankings():
-    return pd.read_csv(GITHUB_RAW_URL)
+    return pd.read_csv(GITHUB_RAW_URL, skiprows=1)  # skip first row with section labels
+
+# --- Parse multi‑section CSV into one DataFrame ---
+def parse_rankings(df):
+    # Define column ranges for each block (start_col, end_col)
+    blocks = {
+        "OVERALL": (0, 4),
+        "QB": (6, 10),
+        "RB": (12, 16),
+        "WR": (18, 22),
+        "TE": (24, 28),
+        "DEF": (30, 34),
+        "K": (36, 40)
+    }
+    all_players = []
+    for pos_name, (start, end) in blocks.items():
+        block_df = df.iloc[:, start:end]
+        block_df.columns = ["Rank", "Player", "Pos", "NFL Team"]
+        block_df["Source_Pos"] = pos_name
+        block_df = block_df.dropna(subset=["Player"])
+        all_players.append(block_df)
+    return pd.concat(all_players, ignore_index=True)
 
 # --- Fetch drafted player IDs ---
 def extract_draft_id(url_or_id):
@@ -66,72 +87,67 @@ if auto_sync:
 
 # --- Load rankings ---
 if uploaded_file:
-    rankings = pd.read_csv(uploaded_file)
+    raw_df = pd.read_csv(uploaded_file, skiprows=1)
 else:
     try:
-        rankings = load_default_rankings()
+        raw_df = load_default_rankings()
         st.caption("📂 Loaded default rankings from GitHub (cached for this session)")
     except Exception as e:
         st.error(f"Could not load default rankings from GitHub: {e}")
-        rankings = None
+        raw_df = None
 
 # --- Main logic ---
-if rankings is not None:
-    if "Player" not in rankings.columns:
-        st.error("Rankings file must have a 'Player' column.")
-    else:
-        # Normalize and map IDs
-        rankings["norm_name"] = rankings["Player"].apply(normalize_name)
-        sleeper_df = get_sleeper_players()
-        merged = rankings.merge(
-            sleeper_df[["Sleeper_ID", "norm_name", "Pos"]],
-            on="norm_name",
-            how="left"
-        )
+if raw_df is not None:
+    rankings = parse_rankings(raw_df)
 
-        # Filters
-        positions = ["ALL"] + sorted(merged["Pos"].dropna().unique())
-        pos_filter = st.selectbox("Filter by position", positions)
-        top_n = st.number_input(
-            "Show top N overall",
-            min_value=1,
-            max_value=len(merged),
-            value=len(merged)
-        )
+    # Normalize and map IDs
+    rankings["norm_name"] = rankings["Player"].apply(normalize_name)
+    sleeper_df = get_sleeper_players()
+    merged = rankings.merge(
+        sleeper_df[["Sleeper_ID", "norm_name", "Pos"]],
+        on="norm_name",
+        how="left"
+    )
 
-        # Apply filters
-        filtered = merged.copy()
-        if pos_filter != "ALL":
-            filtered = filtered[filtered["Pos"] == pos_filter]
-        filtered = filtered.head(top_n)
+    # --- Position filter buttons ---
+    positions = ["OVERALL", "QB", "RB", "WR", "TE", "DEF", "K"]
+    cols = st.columns(len(positions))
+    if "active_pos" not in st.session_state:
+        st.session_state.active_pos = "OVERALL"
+    for i, pos in enumerate(positions):
+        if cols[i].button(pos):
+            st.session_state.active_pos = pos
 
-        # Draft sync
-        drafted_ids = []
-        if draft_url:
-            draft_id = extract_draft_id(draft_url)
-            drafted_ids = fetch_drafted_ids(draft_id)
+    # Filter by active position
+    filtered = merged[merged["Source_Pos"] == st.session_state.active_pos]
 
-        # Mark drafted players
-        filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
+    # Draft sync
+    drafted_ids = []
+    if draft_url:
+        draft_id = extract_draft_id(draft_url)
+        drafted_ids = fetch_drafted_ids(draft_id)
 
-        # Style drafted players
-        styled = filtered.style.apply(
-            lambda row: [
-                'text-decoration: line-through; color: gray' if row.Drafted else ''
-                for _ in row
-            ],
-            axis=1
-        )
+    # Mark drafted players
+    filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
 
-        st.dataframe(styled, use_container_width=True)
+    # Style drafted players
+    styled = filtered.style.apply(
+        lambda row: [
+            'text-decoration: line-through; color: gray' if row.Drafted else ''
+            for _ in row
+        ],
+        axis=1
+    )
 
-        if auto_sync:
-            st.caption(f"🔄 Auto-refreshing every {interval} seconds…")
+    st.dataframe(styled, use_container_width=True)
 
-        # Show unmatched players
-        unmatched = merged[merged["Sleeper_ID"].isna()]
-        if not unmatched.empty:
-            with st.expander("⚠️ Players not matched to Sleeper IDs"):
-                st.write(unmatched[["Player"]])
+    if auto_sync:
+        st.caption(f"🔄 Auto-refreshing every {interval} seconds…")
+
+    # Show unmatched players
+    unmatched = merged[merged["Sleeper_ID"].isna()]
+    if not unmatched.empty:
+        with st.expander("⚠️ Players not matched to Sleeper IDs"):
+            st.write(unmatched[["Player"]])
 else:
     st.info("No rankings available — upload a file or check GitHub URL.")
