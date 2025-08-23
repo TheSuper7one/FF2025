@@ -42,25 +42,53 @@ def get_sleeper_players():
 def load_default_rankings():
     return pd.read_csv(GITHUB_RAW_URL, skiprows=1)  # skip first row with section labels
 
-# --- Parse multi‑section CSV into one DataFrame ---
+# --- Parse multi‑section CSV into one DataFrame with debug + skip invalid ---
 def parse_rankings(df):
-    # Define column ranges for each block (start_col, end_col)
     blocks = {
-        "OVERALL": (0, 4),
-        "QB": (6, 10),
-        "RB": (12, 16),
-        "WR": (18, 22),
-        "TE": (24, 28),
-        "DEF": (30, 34),
-        "K": (36, 40)
+        "OVERALL": 0,
+        "QB": 5,
+        "RB": 10,
+        "WR": 15,
+        "TE": 20,
+        "DEF": 25,
+        "K": 30
     }
     all_players = []
-    for pos_name, (start, end) in blocks.items():
-        block_df = df.iloc[:, start:end]
+    valid_positions = []
+
+    st.subheader("📋 Parsing Debug Info")
+    debug_rows = []
+
+    for pos_name, start_col in blocks.items():
+        block_df = df.iloc[:, start_col:start_col + 4]
+        cols_found = block_df.shape[1]
+        rows_found = block_df.dropna(subset=[block_df.columns[1]]).shape[0]
+
+        if cols_found == 4 and rows_found > 0:
+            status = "✅"
+            valid_positions.append(pos_name)
+        else:
+            status = "⚠️"
+
+        debug_rows.append({
+            "Position": pos_name,
+            "Start Col": start_col,
+            "Cols Found": cols_found,
+            "Rows Found": rows_found,
+            "Status": status
+        })
+
+        if status == "⚠️":
+            continue
+
         block_df.columns = ["Rank", "Player", "Pos", "NFL Team"]
         block_df["Source_Pos"] = pos_name
         block_df = block_df.dropna(subset=["Player"])
         all_players.append(block_df)
+
+    st.table(pd.DataFrame(debug_rows))
+    st.session_state["valid_positions"] = valid_positions
+
     return pd.concat(all_players, ignore_index=True)
 
 # --- Fetch drafted player IDs ---
@@ -100,7 +128,6 @@ else:
 if raw_df is not None:
     rankings = parse_rankings(raw_df)
 
-    # Normalize and map IDs
     rankings["norm_name"] = rankings["Player"].apply(normalize_name)
     sleeper_df = get_sleeper_players()
     merged = rankings.merge(
@@ -109,14 +136,17 @@ if raw_df is not None:
         how="left"
     )
 
-    # --- Position filter buttons ---
-    positions = ["OVERALL", "QB", "RB", "WR", "TE", "DEF", "K"]
-    cols = st.columns(len(positions))
-    if "active_pos" not in st.session_state:
-        st.session_state.active_pos = "OVERALL"
-    for i, pos in enumerate(positions):
-        if cols[i].button(pos):
-            st.session_state.active_pos = pos
+    # --- Position filter buttons (only valid ones) ---
+    positions = st.session_state.get("valid_positions", [])
+    if positions:
+        cols = st.columns(len(positions))
+        if "active_pos" not in st.session_state:
+            st.session_state.active_pos = positions[0]
+        for i, pos in enumerate(positions):
+            if cols[i].button(pos):
+                st.session_state.active_pos = pos
+    else:
+        st.warning("No valid position blocks found in the rankings file.")
 
     # Filter by active position
     filtered = merged[merged["Source_Pos"] == st.session_state.active_pos]
