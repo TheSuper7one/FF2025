@@ -69,8 +69,14 @@ def extract_draft_id(url_or_id):
     return m.group(1) if m else url_or_id.strip()
 
 def fetch_drafted_ids(draft_id):
-    r = requests.get(f"https://api.sleeper.app/v1/draft/{draft_id}/picks")
-    return [p.get("player_id") for p in r.json()] if r.status_code == 200 else []
+    url = f"https://api.sleeper.app/v1/draft/{draft_id}/picks"
+    r = requests.get(url)
+    if r.status_code == 200:
+        data = r.json()
+        # Deep debug: show raw JSON from Sleeper
+        st.write("🛠 DEBUG — Raw /picks JSON:", data)
+        return [p.get("player_id") for p in data if "player_id" in p]
+    return []
 
 # --- Inputs ---
 draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
