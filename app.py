@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh  # NEW
 import pandas as pd
 import requests
 import re
@@ -91,7 +92,7 @@ draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 
 # Conditional fast auto-refresh: only when draft URL is entered
 if draft_url.strip():
-    st.components.v1.html(f"<meta http-equiv='refresh' content='{REFRESH_INTERVAL}'>", height=0)
+    st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="draft_refresh")  # NEW
 
 # --- Load rankings from GitHub ---
 try:
@@ -185,7 +186,7 @@ if raw_df is not None:
     if draft_url.strip():
         st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
 
-    # --- Debug section below board ---
+        # --- Debug section below board ---
     with st.expander("📋 Debug Info"):
         if draft_url.strip():
             st.write("🛠 DEBUG — Parsed Draft ID:", draft_id)
@@ -201,8 +202,3 @@ if raw_df is not None:
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — check GitHub URL.")
-
-
-
-
-
