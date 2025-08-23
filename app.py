@@ -160,22 +160,27 @@ if raw_df is not None:
     visible_df = filtered[~filtered["Drafted"]].copy()
     visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
 
-    # --- Position-based color mapping ---
-    pos_colors = {
-        "RB": "#ffcccc",   # light red
-        "WR": "#ccffcc",   # light green
-        "QB": "#cce0ff",   # light blue
-        "TE": "#e0ccff"    # light purple
+    # --- Position-based text color mapping ---
+    pos_text_colors = {
+        "RB": "darkred",
+        "WR": "darkgreen",
+        "QB": "darkblue",
+        "TE": "indigo"
     }
 
-    def highlight_position(row):
-        color = pos_colors.get(row["Pos"], "#ffffff")  # default white
-        return [f"background-color: {color}"] * len(row)
+    def style_player_column(df):
+        return df.style.apply(
+            lambda col: [
+                f"color: {pos_text_colors.get(pos, 'black')}; font-weight: bold" if col.name == "Player" else ""
+                for pos in df["Pos"]
+            ],
+            axis=0
+        )
 
     # Display board with 15 visible rows
     rows_to_show = 15
     row_height_px = 35
-    styled_df = visible_df[["Rank", "Player", "Pos", "NFL Team"]].style.apply(highlight_position, axis=1)
+    styled_df = style_player_column(visible_df[["Rank", "Player", "Pos", "NFL Team"]])
 
     st.dataframe(styled_df,
                  use_container_width=True,
@@ -190,7 +195,7 @@ if raw_df is not None:
             st.write("🛠 DEBUG — Parsed Draft ID:", draft_id)
             st.write("🛠 DEBUG — Raw /picks JSON:", fetch_raw_picks_json(draft_id))
             st.write("🛠 DEBUG — Drafted IDs from Sleeper:", drafted_ids)
-else:
+        else:
     st.write("🛠 DEBUG — Mock Drafted IDs:", drafted_ids)
 st.table(debug_table)
 
@@ -201,4 +206,3 @@ if not unmatched.empty:
         st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — check GitHub URL.")
-
