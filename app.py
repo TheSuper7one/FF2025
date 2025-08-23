@@ -1,79 +1,116 @@
 import streamlit as st
-import requests
 import pandas as pd
-import re
-from datetime import datetime
+import requests
 
-st.set_page_config(page_title="Sleeper Draft Board", layout="wide")
+st.set_page_config(page_title="Live Draft Cheat Sheet", layout="wide")
 
-# ---------- Safe API fetch ----------
-def safe_get_json(url):
-    try:
-        resp = requests.get(url)
-    except requests.RequestException as e:
-        return None, f"Network error: {e}"
-    if resp.status_code != 200:
-        return None, f"Error {resp.status_code}: {resp.text}"
-    try:
-        return resp.json(), None
-    except ValueError:
-        return None, "Response was not valid JSON"
+# ---------- Normalize BDGE export ----------
+def normalize_rankings(uploaded_file):
+    df = pd.read_csv(uploaded_file)
 
-# ---------- Extract ID from URL or raw input ----------
-def extract_id(user_input):
-    match = re.search(r"(\d{15,})", user_input)
-    return match.group(1) if match else user_input.strip()
+    sections = {
+        "OVERALL": 0,
+        "QB": 4,
+        "RB": 8,
+        "WR": 12,
+        "TE": 16,
+        "DEF": 20,
+        "K": 24,
+        "SUPERFLEX": 28
+    }
 
-# ---------- Fetch picks ----------
+    all_rows = []
+    for section, start_col in sections.items():
+        sub = df.iloc[:, start_col:start_col+4].copy()
+        sub.columns = ["Rank", "Player", "Position", "Team"]
+        sub = sub.dropna(subset=["Player"])
+        sub["SourceList"] = section
+        sub["Rank"] = pd.to_numeric(sub["Rank"], errors="coerce").astype("Int64")
+        all_rows.append(sub)
+
+    final_df = pd.concat(all_rows, ignore_index=True)
+    return final_df
+
+# ---------- Sleeper API helpers ----------
+@st.cache_data
+def load_player_db():
+    url = "https://api.sleeper.app/v1/players/nfl"
+    return requests.get(url).json()
+
 def fetch_picks(draft_id):
-    picks_url = f"https://api.sleeper.app/v1/draft/{draft_id}/picks"
-    picks_data, picks_err = safe_get_json(picks_url)
-    if picks_err:
-        return None, picks_err
-    return picks_data, None
+    url = f"https://api.sleeper.app/v1/draft/{draft_id}/picks"
+    return requests.get(url).json()
 
-# ---------- Format picks ----------
-def format_picks_table(picks):
-    if not picks:
-        return pd.DataFrame()
-    df = pd.DataFrame(picks)
-    keep_cols = ["round", "pick_no", "player_id", "roster_id", "picked_by"]
-    for col in keep_cols:
-        if col not in df.columns:
-            df[col] = None
-    return df[keep_cols].sort_values(by=["round", "pick_no"])
+def mark_drafted(df, picks, player_db):
+    drafted_ids = [str(p['player_id']) for p in picks if p.get('player_id')]
+    drafted_names = {player_db[pid]['full_name'] for pid in drafted_ids if pid in player_db}
+    df['Drafted'] = df['Player'].isin(drafted_names)
+    return df
 
-# ---------- Streamlit UI ----------
-st.title("🏈 Sleeper Draft Board")
-st.write("Paste a **Sleeper League ID**, **Draft ID**, or full Sleeper draft URL (mock or real).")
+# ---------- Tier color mapping ----------
+def tier_color(tier):
+    colors = {
+        1: "#FFD700",  # gold
+        2: "#ADD8E6",  # light blue
+        3: "#90EE90",  # light green
+        4: "#FFB6C1",  # light pink
+        5: "#FFA07A",  # light salmon
+    }
+    return colors.get(tier, "#FFFFFF")  # default white
 
-user_input = st.text_input("Sleeper League/Draft URL or ID:")
-if user_input:
-    draft_id = extract_id(user_input)
+# ---------- UI ----------
+st.title("🏈 Live Draft Cheat Sheet (BDGE Style)")
 
-    # Try to get draft info
-    draft_url = f"https://api.sleeper.app/v1/draft/{draft_id}"
-    draft_data, draft_err = safe_get_json(draft_url)
+uploaded_file = st.file_uploader("Upload your BDGE export CSV", type="csv")
+draft_id = st.text_input("Sleeper Draft ID")
+refresh_rate = st.slider("Refresh every (seconds)", 5, 60, 10)
 
-    if draft_err:
-        if "404" in draft_err:
-            st.warning("📅 This draft lobby exists but has not started yet. Picks will appear once it begins.")
-        else:
-            st.error(f"❌ {draft_err}")
-    elif draft_data:
-        status = draft_data.get("status", "").lower()
-        if status == "pre_draft":
-            start_time = draft_data.get("start_time")
-            if start_time:
-                start_dt = datetime.fromtimestamp(start_time / 1000)
-                st.info(f"📅 Draft scheduled to start at {start_dt} (local time).")
+if uploaded_file and draft_id:
+    cheat_df = normalize_rankings(uploaded_file)
+    player_db = load_player_db()
+
+    picks = fetch_picks(draft_id)
+    cheat_df = mark_drafted(cheat_df, picks, player_db)
+
+    # Optional: add Tier column if not present
+    if "Tier" not in cheat_df.columns:
+        cheat_df["Tier"] = None
+
+    # Filters
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        view_mode = st.radio("View", ["Overall", "By Position"])
+    with col2:
+        hide_drafted = st.checkbox("Hide Drafted Players", value=False)
+    with col3:
+        search_term = st.text_input("Search Player")
+
+    if view_mode == "Overall":
+        filtered_df = cheat_df[cheat_df["SourceList"] == "OVERALL"]
+    else:
+        pos = st.selectbox("Position", sorted(cheat_df["Position"].dropna().unique()))
+        filtered_df = cheat_df[cheat_df["Position"] == pos]
+
+    if hide_drafted:
+        filtered_df = filtered_df[~filtered_df["Drafted"]]
+
+    if search_term:
+        filtered_df = filtered_df[filtered_df["Player"].str.contains(search_term, case=False, na=False)]
+
+    # Style drafted players + tier colors
+    def style_rows(row):
+        styles = []
+        bg_color = tier_color(row.Tier) if pd.notna(row.Tier) else "#FFFFFF"
+        for col in row.index:
+            if row.Drafted:
+                styles.append(f'background-color: {bg_color}; color: gray; text-decoration: line-through;')
             else:
-                st.info("📅 Draft has not started yet.")
-        else:
-            st.success(f"✅ Draft status: {status.capitalize()}")
-            picks, err = fetch_picks(draft_id)
-            if err:
-                st.error(f"Could not fetch picks: {err}")
-            else:
-                st.subheader("Draft Picks")
-                st.dataframe(format_picks_table(picks))
+                styles.append(f'background-color: {bg_color};')
+        return styles
+
+    st.dataframe(
+        filtered_df.style.apply(style_rows, axis=1),
+        use_container_width=True
+    )
+
+    st.experimental_rerun()
