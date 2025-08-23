@@ -3,7 +3,6 @@ import pandas as pd
 import requests
 import re
 import unicodedata
-from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Live Draft Rankings Sync", layout="wide")
 st.title("📊 Live Draft Rankings Sync — Excel‑Style Board + Live Sleeper Sync")
@@ -92,7 +91,7 @@ draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 
 # Conditional fast auto-refresh: only when draft URL is entered
 if draft_url.strip():
-    st.components.v1.html(f"<meta http-equiv='refresh' content='{REFRESH_INTERVAL}'>", height=0)
+    st.experimental_autorefresh(interval=REFRESH_INTERVAL * 1000, key="live_refresh")
 
 # --- Load rankings from GitHub ---
 try:
@@ -202,6 +201,7 @@ if raw_df is not None:
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — check GitHub URL.")
+
 
 
 
