@@ -93,6 +93,9 @@ def parse_rankings(df):
             continue
 
         block_df.columns = ["Rank", "Player", "Pos", "NFL Team"]
+        # Convert Rank to whole numbers
+        block_df["Rank"] = pd.to_numeric(block_df["Rank"], errors="coerce").astype("Int64")
+
         block_df["Source_Pos"] = pos_name
         block_df = block_df.dropna(subset=["Player"])
         all_players.append(block_df)
@@ -163,6 +166,8 @@ if raw_df is not None:
 
     # Filter by active position
     filtered = merged[merged["Source_Pos"] == st.session_state.active_pos]
+    # Remove duplicates so players only appear once
+    filtered = filtered.drop_duplicates(subset=["Sleeper_ID", "norm_name"], keep="first")
 
     # Draft sync
     drafted_ids = []
