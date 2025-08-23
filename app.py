@@ -152,6 +152,12 @@ if raw_df is not None:
         how="left"
     )
 
+    # --- Deduplicate across entire dataset before filtering ---
+    priority_order = ["QB", "RB", "WR", "TE", "DEF", "K", "OVERALL"]
+    merged["pos_priority"] = merged["Source_Pos"].apply(lambda x: priority_order.index(x) if x in priority_order else len(priority_order))
+    merged = merged.sort_values(by=["pos_priority", "Rank"], ascending=[True, True])
+    merged = merged.drop_duplicates(subset=["Sleeper_ID", "norm_name"], keep="first")
+
     # --- Position filter buttons (only valid ones) ---
     positions = st.session_state.get("valid_positions", [])
     if positions:
@@ -166,8 +172,6 @@ if raw_df is not None:
 
     # Filter by active position
     filtered = merged[merged["Source_Pos"] == st.session_state.active_pos]
-    # Remove duplicates so players only appear once
-    filtered = filtered.drop_duplicates(subset=["Sleeper_ID", "norm_name"], keep="first")
 
     # Draft sync
     drafted_ids = []
