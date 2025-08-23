@@ -18,22 +18,30 @@ def safe_get_json(url):
     except ValueError:
         return None, "Response was not valid JSON"
 
-# ---------- Helper: Detect ID type ----------
-def detect_id_type(id_input):
-    """Detects whether the ID is a league or draft and returns type + data."""
-    # Try league endpoint first
+# ---------- Helper: Get latest draft_id for a league ----------
+def get_latest_draft_id_for_league(league_id):
+    drafts_url = f"https://api.sleeper.app/v1/league/{league_id}/drafts"
+    drafts_data, err = safe_get_json(drafts_url)
+    if err or not drafts_data:
+        return None
+    # drafts_data is a list; take the first (most recent) draft
+    return drafts_data[0].get("draft_id")
+
+# ---------- Helper: Detect ID type and resolve to draft_id ----------
+def detect_id_type_and_get_draft_id(id_input):
+    # Try league first
     league_url = f"https://api.sleeper.app/v1/league/{id_input}"
     league_data, league_err = safe_get_json(league_url)
-    if league_data and isinstance(league_data, dict) and "league_id" in league_data:
-        return {"type": "league", "data": league_data}
+    if league_data and "league_id" in league_data:
+        draft_id = get_latest_draft_id_for_league(id_input)
+        return {"type": "league", "draft_id": draft_id, "data": league_data}
 
-    # Try draft endpoint
+    # Try draft
     draft_url = f"https://api.sleeper.app/v1/draft/{id_input}"
     draft_data, draft_err = safe_get_json(draft_url)
-    if draft_data and isinstance(draft_data, dict) and "draft_id" in draft_data:
-        return {"type": "draft", "data": draft_data}
+    if draft_data and "draft_id" in draft_data:
+        return {"type": "draft", "draft_id": id_input, "data": draft_data}
 
-    # If both fail
     return {"type": None, "error": league_err or draft_err or "Invalid ID"}
 
 # ---------- Helper: Fetch picks ----------
@@ -63,25 +71,19 @@ st.write("Enter either a **Sleeper League ID** or a **Sleeper Draft ID** (mock o
 id_input = st.text_input("Sleeper League/Draft ID:")
 
 if id_input:
-    result = detect_id_type(id_input)
+    result = detect_id_type_and_get_draft_id(id_input)
 
     if result.get("error"):
         st.error(f"❌ {result['error']}")
-    elif result["type"] == "league":
-        st.success(f"✅ Detected: League ID — {result['data'].get('name', '')}")
-        draft_id = result["data"].get("draft_id")
-        if draft_id:
-            picks, err = fetch_picks(draft_id)
-            if err:
-                st.error(f"Could not fetch picks: {err}")
-            else:
-                st.subheader("Draft Picks")
-                st.dataframe(format_picks_table(picks))
-        else:
-            st.warning("No draft_id found for this league.")
-    elif result["type"] == "draft":
-        st.success("✅ Detected: Draft ID (mock or real)")
-        picks, err = fetch_picks(id_input)
+    elif not result.get("draft_id"):
+        st.warning("No draft found for this ID.")
+    else:
+        if result["type"] == "league":
+            st.success(f"✅ Detected: League ID — {result['data'].get('name', '')}")
+        elif result["type"] == "draft":
+            st.success("✅ Detected: Draft ID (mock or real)")
+
+        picks, err = fetch_picks(result["draft_id"])
         if err:
             st.error(f"Could not fetch picks: {err}")
         else:
