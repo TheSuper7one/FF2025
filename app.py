@@ -187,8 +187,9 @@ if raw_df is not None:
     unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
     if not unmatched.empty:
         unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
-            with st.expander("⚠️ Players not matched to Sleeper IDs"):
+        with st.expander("⚠️ Players not matched to Sleeper IDs"):
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — check GitHub URL.")
+
 
