@@ -43,7 +43,6 @@ def get_sleeper_players():
 
 @st.cache_data(show_spinner=False)
 def load_default_rankings():
-    # No skiprows — CSV already has proper header
     return pd.read_csv(GITHUB_RAW_URL)
 
 def parse_rankings(df):
@@ -149,8 +148,10 @@ if raw_df is not None:
     pos_text_colors = {
         "RB": "darkred",
         "WR": "darkgreen",
-        "QB": "darkblue",
-        "TE": "indigo"
+        "QB": "#66b2ff",  # lighter blue for dark background
+        "TE": "violet",
+        "DEF": "white",
+        "K": "white"
     }
 
     def style_player_column(df):
@@ -182,6 +183,7 @@ if raw_df is not None:
             st.write("🛠 DEBUG — Drafted IDs from Sleeper:", drafted_ids)
         st.table(debug_table)
 
+    # Only show unmatched players if there are any
     unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
     if not unmatched.empty:
         unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
