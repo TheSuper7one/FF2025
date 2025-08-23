@@ -1,5 +1,4 @@
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh  # NEW
 import pandas as pd
 import requests
 import re
@@ -202,3 +201,4 @@ if raw_df is not None:
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — check GitHub URL.")
+
