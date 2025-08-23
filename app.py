@@ -160,10 +160,24 @@ if raw_df is not None:
     visible_df = filtered[~filtered["Drafted"]].copy()
     visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
 
+    # --- Position-based color mapping ---
+    pos_colors = {
+        "RB": "#ffcccc",   # light red
+        "WR": "#ccffcc",   # light green
+        "QB": "#cce0ff",   # light blue
+        "TE": "#e0ccff"    # light purple
+    }
+
+    def highlight_position(row):
+        color = pos_colors.get(row["Pos"], "#ffffff")  # default white
+        return [f"background-color: {color}"] * len(row)
+
     # Display board with 15 visible rows
     rows_to_show = 15
     row_height_px = 35
-    st.dataframe(visible_df[["Rank", "Player", "Pos", "NFL Team"]],
+    styled_df = visible_df[["Rank", "Player", "Pos", "NFL Team"]].style.apply(highlight_position, axis=1)
+
+    st.dataframe(styled_df,
                  use_container_width=True,
                  height=rows_to_show * row_height_px)
 
@@ -177,13 +191,13 @@ if raw_df is not None:
             st.write("🛠 DEBUG — Raw /picks JSON:", fetch_raw_picks_json(draft_id))
             st.write("🛠 DEBUG — Drafted IDs from Sleeper:", drafted_ids)
         else:
-            st.write("🛠 DEBUG — Mock Drafted IDs:", drafted_ids)
-        st.table(debug_table)
+    st.write("🛠 DEBUG — Mock Drafted IDs:", drafted_ids)
+st.table(debug_table)
 
-    unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
-    if not unmatched.empty:
-        unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
-        with st.expander("⚠️ Players not matched to Sleeper IDs"):
-            st.write(unmatched[["Player", "Pos", "NFL Team"]])
+unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
+if not unmatched.empty:
+    unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
+    with st.expander("⚠️ Players not matched to Sleeper IDs"):
+        st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — check GitHub URL.")
