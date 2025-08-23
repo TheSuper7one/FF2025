@@ -40,12 +40,25 @@ def normalize_name(name):
         .strip()
     )
 
+# --- Position color map ---
+POS_COLORS = {
+    "QB": "#ADD8E6",   # light blue
+    "RB": "#FFB6C1",   # light pink
+    "WR": "#90EE90",   # light green
+    "TE": "#FFD580",   # light orange
+    "K":  "#FFFFFF",   # white
+    "DEF": "#FFFFFF"   # white
+}
+
+def color_positions(val):
+    return f"background-color: {POS_COLORS.get(val, '')}"
+
 # --- Main ---
 st.title("🏈 Fantasy Draft Board")
 
 rankings_url = st.text_input(
     "Enter GitHub CSV URL for rankings:",
-    value="https://raw.githubusercontent.com/your/repo/main/rankings.csv"
+    value="https://raw.githubusercontent.com/<your-user>/<your-repo>/main/rankings.csv"  # <-- put your real working URL here
 )
 
 raw_df = load_rankings(rankings_url)
@@ -74,7 +87,7 @@ if raw_df is not None and sleeper_df is not None:
     st.subheader("Draft Board")
     display_cols = ["Rank", "Player", "Pos", "NFL Team"]
     st.dataframe(
-        merged[display_cols],
+        merged[display_cols].style.applymap(color_positions, subset=["Pos"]),
         use_container_width=True,
         hide_index=True
     )
