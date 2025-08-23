@@ -10,7 +10,14 @@ st.title("📊 Live Draft Rankings Sync — Excel‑Style Board + Live Sleeper S
 # --- CONFIG ---
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/TheSuper7one/FF2025/refs/heads/main/rankings.csv"
 
-# --- Helper: normalize names ---
+# --- Manual name overrides for Sleeper mapping ---
+NAME_ALIASES = {
+    "marvin harrison jr": "marvin harrison",
+    "cameron ward": "cameron ward",  # adjust if Sleeper uses "cam ward"
+    "cam ward": "cameron ward"
+}
+
+# --- Helper: normalize + alias ---
 def normalize_name(name):
     if not isinstance(name, str):
         return ""
@@ -19,6 +26,10 @@ def normalize_name(name):
     name = re.sub(r"[^\w\s]", "", name)
     name = re.sub(r"\s+", " ", name).strip()
     return name
+
+def apply_alias(name):
+    norm = normalize_name(name)
+    return NAME_ALIASES.get(norm, norm)
 
 # --- Cached: fetch Sleeper player database ---
 @st.cache_data(show_spinner=False)
@@ -40,7 +51,7 @@ def get_sleeper_players():
 # --- Cached: load rankings from GitHub ---
 @st.cache_data(show_spinner=False)
 def load_default_rankings():
-    return pd.read_csv(GITHUB_RAW_URL, skiprows=1)  # skip first row with section labels
+    return pd.read_csv(GITHUB_RAW_URL, skiprows=1)
 
 # --- Parse multi‑section CSV into one DataFrame with debug + skip invalid ---
 def parse_rankings(df):
@@ -128,7 +139,9 @@ else:
 if raw_df is not None:
     rankings = parse_rankings(raw_df)
 
-    rankings["norm_name"] = rankings["Player"].apply(normalize_name)
+    # Apply alias mapping before merge
+    rankings["norm_name"] = rankings["Player"].apply(apply_alias)
+
     sleeper_df = get_sleeper_players()
     merged = rankings.merge(
         sleeper_df[["Sleeper_ID", "norm_name", "Pos"]],
@@ -174,8 +187,8 @@ if raw_df is not None:
     if auto_sync:
         st.caption(f"🔄 Auto-refreshing every {interval} seconds…")
 
-    # Show unmatched players
-    unmatched = merged[merged["Sleeper_ID"].isna()]
+    # Show unmatched players (deduped)
+    unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
     if not unmatched.empty:
         with st.expander("⚠️ Players not matched to Sleeper IDs"):
             st.write(unmatched[["Player"]])
