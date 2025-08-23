@@ -42,9 +42,14 @@ def get_sleeper_players():
         "norm_name": normalize_name(f"{pdata.get('first_name','')} {pdata.get('last_name','')}")
     } for pid, pdata in players.items()])
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=60)
 def load_default_rankings():
-    return pd.read_csv(GITHUB_RAW_URL)
+    try:
+        df = pd.read_csv(GITHUB_RAW_URL)
+        return df
+    except Exception as e:
+        st.error(f"⚠️ Error loading rankings from GitHub: {e}")
+        return pd.DataFrame(columns=["Player", "Position", "Team"])  # fallback empty
 
 @st.cache_data(show_spinner=False)
 def parse_rankings(df):
@@ -201,3 +206,4 @@ if draft_url.strip():
     if now - st.session_state["last_refresh"] > REFRESH_INTERVAL:
         st.session_state["last_refresh"] = now
         st.experimental_rerun()
+
