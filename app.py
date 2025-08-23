@@ -203,24 +203,25 @@ if raw_df is not None:
 
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
 
-    # Style drafted players
-    styled = filtered.style.apply(
-        lambda row: [
-            'text-decoration: line-through; color: gray' if row.Drafted else ''
-            for _ in row
-        ],
-        axis=1
-    )
+    # Hide drafted players entirely
+    visible_df = filtered[~filtered["Drafted"]].copy()
 
-    st.dataframe(styled, use_container_width=True)
+    # Rename for cleaner UI
+    visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
+
+    # Only show the columns we care about
+    display_cols = ["Rank", "Player", "Pos", "NFL Team"]
+
+    st.dataframe(visible_df[display_cols], use_container_width=True)
 
     if auto_sync:
         st.caption(f"🔄 Auto-refreshing every {interval} seconds…")
 
-    # Show unmatched players
+    # Show unmatched players (with consistent Pos label)
     unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
     if not unmatched.empty:
+        unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
         with st.expander("⚠️ Players not matched to Sleeper IDs"):
-            st.write(unmatched[["Player", "Sheet_Pos", "NFL Team"]])
+            st.write(unmatched[["Player", "Pos", "NFL Team"]])
 else:
     st.info("No rankings available — upload a file or check GitHub URL.")
