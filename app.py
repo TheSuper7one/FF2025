@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 import re
 import unicodedata
-from streamlit_autorefresh import st_autorefresh  # ✅ Correct import for timed refresh
+from streamlit_autorefresh import st_autorefresh  # timed refresh helper
 
 st.set_page_config(page_title="Live Draft Rankings Sync", layout="wide")
 st.title("📊 Live Draft Rankings Sync — Excel‑Style Board + Live Sleeper Sync")
@@ -130,7 +130,7 @@ draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 auto_sync = st.toggle("Auto-refresh")
 interval = st.slider("Refresh interval (seconds)", 5, 30, 10)
 
-# New toggle to show/hide drafted players
+# Toggle to show/hide drafted players
 show_drafted = st.toggle("Show Drafted Players", value=False)
 
 if auto_sync:
@@ -231,4 +231,6 @@ if raw_df is not None:
     if not unmatched.empty:
         unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
         with st.expander("⚠️ Players not matched to Sleeper IDs"):
-            st.write(unmatched[["Player
+            st.write(unmatched[["Player", "Pos", "NFL Team"]])
+else:
+    st.info("No rankings available — upload a file or check GitHub URL.")
