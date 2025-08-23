@@ -87,7 +87,7 @@ def fetch_drafted_ids(draft_id):
 # --- Inputs ---
 draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 
-# --- Load rankings from GitHub ---
+# --- Load rankings ---
 raw_df = load_default_rankings()
 
 # --- Main logic ---
@@ -136,7 +136,7 @@ if not raw_df.empty:
     filtered = filtered.sort_values(by=["has_id", "Rank"], ascending=[False, True])
     filtered = filtered.drop_duplicates(subset=["norm_name"], keep="first").drop(columns=["has_id"])
 
-    # Draft sync
+    # --- Draft sync ---
     draft_id = extract_draft_id(draft_url) if draft_url else None
     drafted_ids = fetch_drafted_ids(draft_id) if draft_id else []
     last_sync = time.strftime("%H:%M:%S") if draft_id else None
@@ -171,10 +171,11 @@ if not raw_df.empty:
         unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
         with st.expander("⚠️ Players not matched to Sleeper IDs"):
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
+
 else:
     st.info("No rankings available — check GitHub URL.")
 
-# Auto-rerun
+# --- Auto-rerun ---
 if draft_url.strip():
     if "last_refresh" not in st.session_state:
         st.session_state["last_refresh"] = time.time()
