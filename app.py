@@ -71,8 +71,8 @@ def extract_draft_id(url_or_id):
     m = re.search(r"draft/(?:nfl/)?(\d+)", url_or_id)
     return m.group(1) if m else url_or_id.strip()
 
-@st.cache_data(ttl=3, show_spinner=False)
-def fetch_drafted_ids(draft_id):
+# --- LIVE fetch of drafted IDs (no caching) ---
+def fetch_drafted_ids_live(draft_id):
     if not draft_id:
         return []
     url = f"https://api.sleeper.app/v1/draft/{draft_id}/picks"
@@ -138,7 +138,7 @@ if not raw_df.empty:
 
     # --- Draft sync ---
     draft_id = extract_draft_id(draft_url) if draft_url else None
-    drafted_ids = fetch_drafted_ids(draft_id) if draft_id else []
+    drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
     last_sync = time.strftime("%H:%M:%S") if draft_id else None
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
 
