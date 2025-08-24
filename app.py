@@ -66,7 +66,6 @@ def parse_rankings(df):
             all_players.append(block_df.dropna(subset=["Player"]))
     st.session_state["valid_positions"] = valid_positions
     df_final = pd.concat(all_players, ignore_index=True) if all_players else pd.DataFrame()
-    # Remove repeated header row if present
     df_final = df_final[df_final['Player'].str.lower() != 'player'].reset_index(drop=True)
     return df_final
 
@@ -92,6 +91,8 @@ draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 
 # --- Load rankings ---
 raw_df = load_default_rankings()
+
+visible_df = pd.DataFrame(columns=["Rank", "Player", "Pos", "NFL Team"])  # default empty
 
 if not raw_df.empty:
     rankings = parse_rankings(raw_df)
@@ -169,7 +170,7 @@ if not raw_df.empty:
         now = time.time()
         if now - st.session_state["last_refresh"] > REFRESH_INTERVAL:
             st.session_state["last_refresh"] = now
-            st.experimental_rerun()
+            st.rerun()
 
 else:
     st.info("No rankings available — check GitHub URL.")
