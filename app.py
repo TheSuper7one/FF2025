@@ -142,6 +142,7 @@ if not raw_df.empty:
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
     visible_df = filtered[~filtered["Drafted"]].copy()
     visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
+    visible_df.reset_index(drop=True, inplace=True)  # <-- Reset index to remove weird 0 Player row
 
     # Text color mapping
     pos_text_colors = {"RB": "darkred", "WR": "darkgreen", "QB": "#66b2ff", "TE": "violet", "DEF": "white", "K": "white"}
