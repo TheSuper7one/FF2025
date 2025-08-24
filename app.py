@@ -22,8 +22,7 @@ def normalize_name(name):
     if not isinstance(name, str):
         return ""
     name = name.lower()
-    name = ''.join(c for c in unicodedata.normalize('NFD', name)
-                   if unicodedata.category(c) != 'Mn')
+    name = ''.join(c for c in unicodedata.normalize('NFD', name) if unicodedata.category(c) != 'Mn')
     name = re.sub(r"[^\w\s]", "", name)
     return re.sub(r"\s+", " ", name).strip()
 
@@ -57,17 +56,18 @@ def parse_rankings(df):
     for pos_name, start_col in blocks.items():
         block_df = df.iloc[:, start_col:start_col + 4]
         cols_found, rows_found = block_df.shape[1], block_df.dropna(subset=[block_df.columns[1]]).shape[0]
-        status = "✅" if cols_found == 4 and rows_found > 0 else "⚠️"
-        if status == "✅":
+        if cols_found == 4 and rows_found > 0:
             valid_positions.append(pos_name)
             block_df.columns = ["Rank", "Player", "Sheet_Pos", "NFL Team"]
             block_df["Rank"] = pd.to_numeric(block_df["Rank"], errors="coerce").astype("Int64")
             block_df["Source_Pos"] = pos_name
             all_players.append(block_df.dropna(subset=["Player"]))
     st.session_state["valid_positions"] = valid_positions
-    df_final = pd.concat(all_players, ignore_index=True) if all_players else pd.DataFrame()
-    df_final = df_final[df_final['Player'].str.lower() != 'player'].reset_index(drop=True)
-    return df_final
+    if all_players:
+        df_final = pd.concat(all_players, ignore_index=True)
+        df_final = df_final[df_final['Player'].str.lower() != 'player'].reset_index(drop=True)
+        return df_final
+    return pd.DataFrame()
 
 def extract_draft_id(url_or_id):
     m = re.search(r"draft/(?:nfl/)?(\d+)", url_or_id)
@@ -92,71 +92,77 @@ draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 # --- Load rankings ---
 raw_df = load_default_rankings()
 
-# Always initialize visible_df
-visible_df = pd.DataFrame(columns=["Rank", "Player", "Pos", "NFL Team"])
-
 if not raw_df.empty:
     rankings = parse_rankings(raw_df)
-    rankings["norm_name"] = rankings["Player"].apply(apply_alias)
-    rankings["NFL Team"] = rankings["NFL Team"].fillna("").astype(str).str.upper()
-    sleeper_df = get_sleeper_players()
+    if not rankings.empty:
+        rankings["norm_name"] = rankings["Player"].apply(apply_alias)
+        rankings["NFL Team"] = rankings["NFL Team"].fillna("").astype(str).str.upper()
+        sleeper_df = get_sleeper_players()
 
-    # Strict match
-    strict = rankings.merge(
-        sleeper_df[["Sleeper_ID", "norm_name", "Sleeper_Pos", "Sleeper_Team"]],
-        left_on=["norm_name", "Sheet_Pos", "NFL Team"],
-        right_on=["norm_name", "Sleeper_Pos", "Sleeper_Team"],
-        how="left"
-    )
-
-    # Relaxed match
-    unmatched_mask = strict["Sleeper_ID"].isna()
-    if unmatched_mask.any():
-        relaxed = rankings.loc[unmatched_mask].merge(
-            sleeper_df[["Sleeper_ID", "norm_name", "Sleeper_Pos"]],
-            left_on=["norm_name", "Sheet_Pos"],
-            right_on=["norm_name", "Sleeper_Pos"],
+        # Strict match
+        strict = rankings.merge(
+            sleeper_df[["Sleeper_ID", "norm_name", "Sleeper_Pos", "Sleeper_Team"]],
+            left_on=["norm_name", "Sheet_Pos", "NFL Team"],
+            right_on=["norm_name", "Sleeper_Pos", "Sleeper_Team"],
             how="left"
         )
-        strict.loc[unmatched_mask, "Sleeper_ID"] = relaxed["Sleeper_ID"].values
 
-    merged = strict
+        # Relaxed match
+        unmatched_mask = strict["Sleeper_ID"].isna()
+        if unmatched_mask.any():
+            relaxed = rankings.loc[unmatched_mask].merge(
+                sleeper_df[["Sleeper_ID", "norm_name", "Sleeper_Pos"]],
+                left_on=["norm_name", "Sheet_Pos"],
+                right_on=["norm_name", "Sleeper_Pos"],
+                how="left"
+            )
+            strict.loc[unmatched_mask, "Sleeper_ID"] = relaxed["Sleeper_ID"].values
 
-    # Initialize active position
-    if "active_pos" not in st.session_state:
-        st.session_state["active_pos"] = "OVERALL"
+        merged = strict
 
-    # --- Always fetch drafted IDs first ---
-    draft_id = extract_draft_id(draft_url) if draft_url else None
-    drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
+        # Initialize active position
+        if "active_pos" not in st.session_state:
+            st.session_state["active_pos"] = "OVERALL"
 
-    # Filter visible players for active position
-    active = st.session_state.get("active_pos", "OVERALL")
-    filtered = merged[merged["Source_Pos"] == active].copy()
-    filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
-    visible_df = filtered[~filtered["Drafted"]].copy()
-    visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
-    visible_df.reset_index(drop=True, inplace=True)
+        # --- Position filter buttons ---
+        positions = st.session_state.get("valid_positions", [])
+        if positions:
+            cols = st.columns(len(positions))
+            for i, pos in enumerate(positions):
+                if cols[i].button(pos):
+                    st.session_state["active_pos"] = pos
 
-    # Position colors matching Sleeper
-    pos_text_colors = {"WR": "blue", "RB": "green", "QB": "red", "TE": "orange", "DEF": "white", "K": "white"}
+        # --- Draft sync ---
+        draft_id = extract_draft_id(draft_url) if draft_url else None
+        drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
 
-    def style_player_column(df):
-        return df.style.apply(
-            lambda col: [f"color: {pos_text_colors.get(pos, 'black')}; font-weight: bold" if col.name == "Player" else "" for pos in df["Pos"]],
-            axis=0
-        ).hide(axis="index")
+        # Filter visible players for active position
+        active = st.session_state.get("active_pos", "OVERALL")
+        filtered = merged[merged["Source_Pos"] == active].copy()
+        filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
+        visible_df = filtered[~filtered["Drafted"]].copy()
+        visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
+        visible_df.reset_index(drop=True, inplace=True)
 
-    rows_to_show = 15
-    row_height_px = 35
+        # Position colors matching Sleeper
+        pos_text_colors = {"WR": "blue", "RB": "green", "QB": "red", "TE": "orange", "DEF": "white", "K": "white"}
 
-    if not visible_df.empty:
-        styled_df = style_player_column(visible_df[["Rank", "Player", "Pos", "NFL Team"]])
-        st.dataframe(styled_df, use_container_width=True, height=rows_to_show * row_height_px)
+        def style_player_column(df):
+            return df.style.apply(
+                lambda col: [f"color: {pos_text_colors.get(pos, 'black')}; font-weight: bold" if col.name == "Player" else "" for pos in df["Pos"]],
+                axis=0
+            ).hide(axis="index")
 
-    if draft_url.strip():
-        st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
-        st.caption(f"⏱️ Last synced with Sleeper at {time.strftime('%H:%M:%S')}")
+        rows_to_show = 15
+        row_height_px = 35
+
+        if not visible_df.empty:
+            styled_df = style_player_column(visible_df[["Rank", "Player", "Pos", "NFL Team"]])
+            st.dataframe(styled_df, use_container_width=True, height=rows_to_show * row_height_px)
+
+        if draft_url.strip():
+            st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
+            st.caption(f"⏱️ Last synced with Sleeper at {time.strftime('%H:%M:%S')}")
 
 # --- Auto-refresh ---
 if draft_url.strip():
