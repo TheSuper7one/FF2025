@@ -163,15 +163,3 @@ if not raw_df.empty:
         if draft_url.strip():
             st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
             st.caption(f"⏱️ Last synced with Sleeper at {time.strftime('%H:%M:%S')}")
-
-# --- Auto-refresh ---
-if draft_url.strip():
-    if "last_refresh" not in st.session_state:
-        st.session_state["last_refresh"] = time.time()
-    now = time.time()
-    if now - st.session_state["last_refresh"] > REFRESH_INTERVAL:
-        st.session_state["last_refresh"] = now
-        st.rerun()
-
-else:
-    st.info("No rankings available — check GitHub URL.")
