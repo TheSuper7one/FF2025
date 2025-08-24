@@ -157,8 +157,8 @@ if not raw_df.empty:
             visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
             visible_df.reset_index(drop=True, inplace=True)
 
-            # Rerun to update table
-            st.experimental_rerun()
+            # Rerun to update table using current Streamlit method
+            st.rerun()
 
     # Text color mapping matching Sleeper colors
     pos_text_colors = {"WR": "blue", "RB": "green", "QB": "red", "TE": "orange", "DEF": "white", "K": "white"}
