@@ -92,6 +92,10 @@ raw_df = load_default_rankings()
 
 if not raw_df.empty:
     rankings = parse_rankings(raw_df)
+    # Remove any repeated header row in data
+    rankings = rankings[rankings['Player'].str.lower() != 'player']
+    rankings.reset_index(drop=True, inplace=True)
+
     rankings["norm_name"] = rankings["Player"].apply(apply_alias)
     rankings["NFL Team"] = rankings["NFL Team"].fillna("").astype(str).str.upper()
     sleeper_df = get_sleeper_players()
@@ -144,8 +148,8 @@ if not raw_df.empty:
     visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
     visible_df.reset_index(drop=True, inplace=True)  # Reset index to remove extra top row
 
-    # Text color mapping
-    pos_text_colors = {"RB": "darkred", "WR": "darkgreen", "QB": "#66b2ff", "TE": "violet", "DEF": "white", "K": "white"}
+    # Text color mapping matching Sleeper colors
+    pos_text_colors = {"WR": "blue", "RB": "green", "QB": "red", "TE": "orange", "DEF": "white", "K": "white"}
 
     def style_player_column(df):
         return df.style.apply(
