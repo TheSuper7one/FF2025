@@ -147,7 +147,9 @@ if raw_df is not None and not raw_df.empty:
         def style_player_column(df):
             if df.empty:
                 return df
-            return df.style.hide_index().apply(
+            styled = df.copy()
+            styled.index = pd.RangeIndex(len(df))
+            return styled.style.apply(
                 lambda col: [f"color: {pos_text_colors.get(pos,'black')}; font-weight: bold" if col.name == 'Player' else '' for pos in df['Pos']],
                 axis=0
             )
