@@ -92,7 +92,7 @@ raw_df = load_default_rankings()
 
 if not raw_df.empty:
     rankings = parse_rankings(raw_df)
-    # Remove any repeated header row in data
+    # Remove repeated header row
     rankings = rankings[rankings['Player'].str.lower() != 'player']
     rankings.reset_index(drop=True, inplace=True)
 
@@ -135,18 +135,30 @@ if not raw_df.empty:
     else:
         st.warning("No valid position blocks found.")
 
-    # --- Draft sync ---
     draft_id = extract_draft_id(draft_url) if draft_url else None
-    drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
-    last_sync = time.strftime("%H:%M:%S") if draft_id else None
 
-    # Filter visible players for active position
-    active = st.session_state["active_pos"]
-    filtered = merged[merged["Source_Pos"] == active].copy()
-    filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
-    visible_df = filtered[~filtered["Drafted"]].copy()
-    visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
-    visible_df.reset_index(drop=True, inplace=True)  # Reset index to remove extra top row
+    # --- Auto-rerun + live draft fetch ---
+    if draft_url.strip():
+        if "last_refresh" not in st.session_state:
+            st.session_state["last_refresh"] = 0
+
+        now = time.time()
+        if now - st.session_state["last_refresh"] >= REFRESH_INTERVAL:
+            st.session_state["last_refresh"] = now
+
+            # Fetch drafted IDs live on every refresh
+            drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
+
+            # Filter visible players for active position after fetching picks
+            active = st.session_state["active_pos"]
+            filtered = merged[merged["Source_Pos"] == active].copy()
+            filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
+            visible_df = filtered[~filtered["Drafted"]].copy()
+            visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
+            visible_df.reset_index(drop=True, inplace=True)
+
+            # Rerun to update table
+            st.experimental_rerun()
 
     # Text color mapping matching Sleeper colors
     pos_text_colors = {"WR": "blue", "RB": "green", "QB": "red", "TE": "orange", "DEF": "white", "K": "white"}
@@ -155,7 +167,7 @@ if not raw_df.empty:
         return df.style.apply(
             lambda col: [f"color: {pos_text_colors.get(pos, 'black')}; font-weight: bold" if col.name == "Player" else "" for pos in df["Pos"]],
             axis=0
-        ).hide(axis="index")  # Hide index column
+        ).hide(axis="index")
 
     rows_to_show = 15
     row_height_px = 35
@@ -164,17 +176,7 @@ if not raw_df.empty:
 
     if draft_url.strip():
         st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
-        if last_sync:
-            st.caption(f"⏱️ Last synced with Sleeper at {last_sync}")
+        st.caption(f"⏱️ Last synced with Sleeper at {time.strftime('%H:%M:%S')}")
 
 else:
     st.info("No rankings available — check GitHub URL.")
-
-# --- Auto-rerun ---
-if draft_url.strip():
-    if "last_refresh" not in st.session_state:
-        st.session_state["last_refresh"] = time.time()
-    now = time.time()
-    if now - st.session_state["last_refresh"] > REFRESH_INTERVAL:
-        st.session_state["last_refresh"] = now
-        st.experimental_rerun()
