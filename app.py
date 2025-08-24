@@ -163,3 +163,8 @@ if not raw_df.empty:
         if draft_url.strip():
             st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
             st.caption(f"⏱️ Last synced with Sleeper at {time.strftime('%H:%M:%S')}")
+            
+if draft_url.strip():
+    # Auto-refresh every REFRESH_INTERVAL seconds
+    time.sleep(REFRESH_INTERVAL)
+    st.experimental_rerun()
