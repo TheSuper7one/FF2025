@@ -74,7 +74,7 @@ def extract_draft_id(url_or_id):
     m = re.search(r"draft/(?:nfl/)?(\d+)", url_or_id)
     return m.group(1) if m else url_or_id.strip()
 
-# --- LIVE fetch of drafted IDs (no caching) ---
+# --- LIVE fetch of drafted IDs ---
 def fetch_drafted_ids_live(draft_id):
     if not draft_id:
         return []
@@ -132,38 +132,44 @@ if not raw_df.empty:
             if cols[i].button(pos):
                 st.session_state["active_pos"] = pos
 
+    # --- Main display ---
+    active = st.session_state.get("active_pos", "OVERALL")
+    filtered = merged[merged["Source_Pos"] == active].copy()
     draft_id = extract_draft_id(draft_url) if draft_url else None
+    drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
+    filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
+    visible_df = filtered[~filtered["Drafted"]].copy()
+    visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
+    visible_df.reset_index(drop=True, inplace=True)
+
+    # Color mapping for Sleeper
+    pos_text_colors = {"WR": "blue", "RB": "green", "QB": "red", "TE": "orange", "DEF": "white", "K": "white"}
+
+    def style_player_column(df):
+        return df.style.apply(
+            lambda col: [f"color: {pos_text_colors.get(pos, 'black')}; font-weight: bold" if col.name == "Player" else "" for pos in df["Pos"]],
+            axis=0
+        ).hide(axis="index")
+
     rows_to_show = 15
     row_height_px = 35
 
-    # --- Main display and auto-refresh loop ---
-    while True:
-        active = st.session_state.get("active_pos", "OVERALL")
-        filtered = merged[merged["Source_Pos"] == active].copy()
-        drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
-        filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
-        visible_df = filtered[~filtered["Drafted"]].copy()
-        visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
-        visible_df.reset_index(drop=True, inplace=True)
+    if not visible_df.empty:
+        styled_df = style_player_column(visible_df[["Rank", "Player", "Pos", "NFL Team"]])
+        st.dataframe(styled_df, use_container_width=True, height=rows_to_show * row_height_px)
 
-        # Color mapping for Sleeper
-        pos_text_colors = {"WR": "blue", "RB": "green", "QB": "red", "TE": "orange", "DEF": "white", "K": "white"}
+    if draft_url.strip():
+        st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
+        st.caption(f"⏱️ Last synced with Sleeper at {time.strftime('%H:%M:%S')}")
 
-        def style_player_column(df):
-            return df.style.apply(
-                lambda col: [f"color: {pos_text_colors.get(pos, 'black')}; font-weight: bold" if col.name == "Player" else "" for pos in df["Pos"]],
-                axis=0
-            ).hide(axis="index")
-
-        if not visible_df.empty:
-            styled_df = style_player_column(visible_df[["Rank", "Player", "Pos", "NFL Team"]])
-            st.dataframe(styled_df, use_container_width=True, height=rows_to_show * row_height_px)
-
-        if draft_url.strip():
-            st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
-            st.caption(f"⏱️ Last synced with Sleeper at {time.strftime('%H:%M:%S')}")
-
-        time.sleep(REFRESH_INTERVAL)
+    # --- Auto-rerun for live sync ---
+    if draft_url.strip():
+        if "last_refresh" not in st.session_state:
+            st.session_state["last_refresh"] = time.time()
+        now = time.time()
+        if now - st.session_state["last_refresh"] > REFRESH_INTERVAL:
+            st.session_state["last_refresh"] = now
+            st.experimental_rerun()
 
 else:
     st.info("No rankings available — check GitHub URL.")
