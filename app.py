@@ -90,7 +90,6 @@ draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 # --- Load rankings ---
 raw_df = load_default_rankings()
 
-# --- Main logic ---
 if not raw_df.empty:
     rankings = parse_rankings(raw_df)
     rankings["norm_name"] = rankings["Player"].apply(apply_alias)
@@ -118,31 +117,29 @@ if not raw_df.empty:
 
     merged = strict
 
+    # Initialize active position
+    if "active_pos" not in st.session_state:
+        st.session_state["active_pos"] = "OVERALL"
+
     # Position filter buttons
     positions = st.session_state.get("valid_positions", [])
     if positions:
         cols = st.columns(len(positions))
-        if "active_pos" not in st.session_state:
-            st.session_state.active_pos = positions[0]
         for i, pos in enumerate(positions):
             if cols[i].button(pos):
-                st.session_state.active_pos = pos
+                st.session_state["active_pos"] = pos
     else:
         st.warning("No valid position blocks found.")
-
-    active = st.session_state.active_pos
-    filtered = merged[merged["Source_Pos"] == active].copy()
-    filtered["has_id"] = filtered["Sleeper_ID"].notna().astype(int)
-    filtered = filtered.sort_values(by=["has_id", "Rank"], ascending=[False, True])
-    filtered = filtered.drop_duplicates(subset=["norm_name"], keep="first").drop(columns=["has_id"])
 
     # --- Draft sync ---
     draft_id = extract_draft_id(draft_url) if draft_url else None
     drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
     last_sync = time.strftime("%H:%M:%S") if draft_id else None
-    filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
 
-    # Hide drafted players
+    # Filter visible players for active position
+    active = st.session_state["active_pos"]
+    filtered = merged[merged["Source_Pos"] == active].copy()
+    filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
     visible_df = filtered[~filtered["Drafted"]].copy()
     visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
 
