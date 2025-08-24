@@ -65,7 +65,10 @@ def parse_rankings(df):
             block_df["Source_Pos"] = pos_name
             all_players.append(block_df.dropna(subset=["Player"]))
     st.session_state["valid_positions"] = valid_positions
-    return pd.concat(all_players, ignore_index=True) if all_players else pd.DataFrame()
+    df_final = pd.concat(all_players, ignore_index=True) if all_players else pd.DataFrame()
+    # Remove repeated header row if present
+    df_final = df_final[df_final['Player'].str.lower() != 'player'].reset_index(drop=True)
+    return df_final
 
 def extract_draft_id(url_or_id):
     m = re.search(r"draft/(?:nfl/)?(\d+)", url_or_id)
@@ -92,10 +95,6 @@ raw_df = load_default_rankings()
 
 if not raw_df.empty:
     rankings = parse_rankings(raw_df)
-    # Remove repeated header row
-    rankings = rankings[rankings['Player'].str.lower() != 'player']
-    rankings.reset_index(drop=True, inplace=True)
-
     rankings["norm_name"] = rankings["Player"].apply(apply_alias)
     rankings["NFL Team"] = rankings["NFL Team"].fillna("").astype(str).str.upper()
     sleeper_df = get_sleeper_players()
@@ -137,30 +136,30 @@ if not raw_df.empty:
 
     draft_id = extract_draft_id(draft_url) if draft_url else None
 
-    # --- Auto-rerun + live draft fetch ---
+    # --- Initialize visible_df for table display ---
+    active = st.session_state.get("active_pos", "OVERALL")
+    filtered = merged[merged["Source_Pos"] == active].copy()
+    drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
+    filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
+    visible_df = filtered[~filtered["Drafted"]].copy()
+    visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
+    visible_df.reset_index(drop=True, inplace=True)
+
+    # --- Auto-rerun / live refresh ---
     if draft_url.strip():
         if "last_refresh" not in st.session_state:
             st.session_state["last_refresh"] = 0
-
         now = time.time()
         if now - st.session_state["last_refresh"] >= REFRESH_INTERVAL:
             st.session_state["last_refresh"] = now
-
-            # Fetch drafted IDs live on every refresh
             drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
-
-            # Filter visible players for active position after fetching picks
-            active = st.session_state["active_pos"]
-            filtered = merged[merged["Source_Pos"] == active].copy()
             filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
             visible_df = filtered[~filtered["Drafted"]].copy()
             visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
             visible_df.reset_index(drop=True, inplace=True)
-
-            # Rerun to update table using current Streamlit method
             st.rerun()
 
-    # Text color mapping matching Sleeper colors
+    # Text color mapping matching Sleeper
     pos_text_colors = {"WR": "blue", "RB": "green", "QB": "red", "TE": "orange", "DEF": "white", "K": "white"}
 
     def style_player_column(df):
