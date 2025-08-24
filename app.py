@@ -132,11 +132,11 @@ if not raw_df.empty:
                 if cols[i].button(pos):
                     st.session_state["active_pos"] = pos
 
-        # --- Draft sync ---
+        # --- Draft sync & table display ---
         draft_id = extract_draft_id(draft_url) if draft_url else None
-        drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
 
-        # Filter visible players for active position
+        # Fetch drafted IDs every refresh
+        drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
         active = st.session_state.get("active_pos", "OVERALL")
         filtered = merged[merged["Source_Pos"] == active].copy()
         filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
@@ -163,8 +163,13 @@ if not raw_df.empty:
         if draft_url.strip():
             st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
             st.caption(f"⏱️ Last synced with Sleeper at {time.strftime('%H:%M:%S')}")
-            
-if draft_url.strip():
-    # Auto-refresh every REFRESH_INTERVAL seconds
-    time.sleep(REFRESH_INTERVAL)
-    st.experimental_rerun()
+
+        # --- Auto-refresh to hide drafted players automatically ---
+        if draft_url.strip():
+            if 'last_refresh' not in st.session_state:
+                st.session_state['last_refresh'] = time.time()
+            now = time.time()
+            if now - st.session_state['last_refresh'] > REFRESH_INTERVAL:
+                st.session_state['last_refresh'] = now
+                time.sleep(0.5)  # small pause to avoid hammering Sleeper API
+                st.experimental_rerun()
