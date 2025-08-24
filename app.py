@@ -151,12 +151,12 @@ if raw_df is not None:
     visible_df = filtered[~filtered["Drafted"]].copy()
     visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
 
-    # --- Position-based text color mapping ---
+    # --- Updated position-based text color mapping ---
     pos_text_colors = {
-        "RB": "darkred",
-        "WR": "darkgreen",
-        "QB": "#66b2ff",  # lighter blue for dark background
-        "TE": "violet",
+        "RB": "green",
+        "WR": "blue",
+        "QB": "red",
+        "TE": "orange",
         "DEF": "white",
         "K": "white"
     }
@@ -209,12 +209,3 @@ if draft_url.strip():
     except Exception:
         # Fallback for older versions
         st.experimental_rerun()
-
-
-
-
-
-
-
-
-
