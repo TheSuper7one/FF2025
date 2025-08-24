@@ -201,4 +201,3 @@ if draft_url.strip():
     if now - st.session_state["last_refresh"] > REFRESH_INTERVAL:
         st.session_state["last_refresh"] = now
         st.experimental_rerun()
-
