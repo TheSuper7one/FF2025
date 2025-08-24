@@ -92,7 +92,8 @@ draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 # --- Load rankings ---
 raw_df = load_default_rankings()
 
-visible_df = pd.DataFrame(columns=["Rank", "Player", "Pos", "NFL Team"])  # default empty
+# Always initialize visible_df
+visible_df = pd.DataFrame(columns=["Rank", "Player", "Pos", "NFL Team"])
 
 if not raw_df.empty:
     rankings = parse_rankings(raw_df)
@@ -125,25 +126,19 @@ if not raw_df.empty:
     if "active_pos" not in st.session_state:
         st.session_state["active_pos"] = "OVERALL"
 
-    # Position filter buttons
-    positions = st.session_state.get("valid_positions", [])
-    if positions:
-        cols = st.columns(len(positions))
-        for i, pos in enumerate(positions):
-            if cols[i].button(pos):
-                st.session_state["active_pos"] = pos
-
-    # --- Main display ---
-    active = st.session_state.get("active_pos", "OVERALL")
-    filtered = merged[merged["Source_Pos"] == active].copy()
+    # --- Always fetch drafted IDs first ---
     draft_id = extract_draft_id(draft_url) if draft_url else None
     drafted_ids = fetch_drafted_ids_live(draft_id) if draft_id else []
+
+    # Filter visible players for active position
+    active = st.session_state.get("active_pos", "OVERALL")
+    filtered = merged[merged["Source_Pos"] == active].copy()
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
     visible_df = filtered[~filtered["Drafted"]].copy()
     visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
     visible_df.reset_index(drop=True, inplace=True)
 
-    # Color mapping for Sleeper
+    # Position colors matching Sleeper
     pos_text_colors = {"WR": "blue", "RB": "green", "QB": "red", "TE": "orange", "DEF": "white", "K": "white"}
 
     def style_player_column(df):
@@ -163,14 +158,14 @@ if not raw_df.empty:
         st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
         st.caption(f"⏱️ Last synced with Sleeper at {time.strftime('%H:%M:%S')}")
 
-    # --- Auto-rerun for live sync ---
-    if draft_url.strip():
-        if "last_refresh" not in st.session_state:
-            st.session_state["last_refresh"] = time.time()
-        now = time.time()
-        if now - st.session_state["last_refresh"] > REFRESH_INTERVAL:
-            st.session_state["last_refresh"] = now
-            st.rerun()
+# --- Auto-refresh ---
+if draft_url.strip():
+    if "last_refresh" not in st.session_state:
+        st.session_state["last_refresh"] = time.time()
+    now = time.time()
+    if now - st.session_state["last_refresh"] > REFRESH_INTERVAL:
+        st.session_state["last_refresh"] = now
+        st.rerun()
 
 else:
     st.info("No rankings available — check GitHub URL.")
