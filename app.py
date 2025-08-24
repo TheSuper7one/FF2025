@@ -9,27 +9,8 @@ from streamlit_autorefresh import st_autorefresh
 st.set_page_config(page_title="Live Draft Rankings Sync", layout="wide")
 st.title("📊 Live Draft Rankings Sync — Excel‑Style Board + Live Sleeper Sync")
 
-# --- Auto-refresh every X seconds ---
-REFRESH_INTERVAL = 5  # seconds
-
-if "last_refresh" not in st.session_state:
-    st.session_state["last_refresh"] = time.time()
-
-# Draft URL check (replace with your variable if different)
-if "draft_url" in st.session_state:
-    draft_url = st.session_state["draft_url"]
-else:
-    draft_url = ""  # or set your default here
-
-if draft_url.strip():  # only refresh if draft is active
-    now = time.time()
-    if now - st.session_state["last_refresh"] > REFRESH_INTERVAL:
-        st.session_state["last_refresh"] = now
-        try:
-            st.rerun()  # Streamlit ≥ 1.31
-        except AttributeError:
-            st.experimental_rerun()  # older Streamlit
-# --- End Auto-refresh ---
+# Auto-refresh every 5 seconds (5000 ms)
+st_autorefresh(interval=5000, key="draftboard_autorefresh")
 
 # --- CONFIG ---
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/TheSuper7one/FF2025/refs/heads/main/rankings.csv"
@@ -232,4 +213,5 @@ if draft_url.strip():
     except Exception:
         # Fallback for older versions
         st.experimental_rerun()
+
 
