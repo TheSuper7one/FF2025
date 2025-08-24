@@ -177,4 +177,7 @@ else:
 # --- Auto-rerun for live sync ---
 if draft_url.strip():
     time.sleep(REFRESH_INTERVAL)
-    st.experimental_rerun()
+    try:
+        st.rerun()  # Newer Streamlit versions
+    except AttributeError:
+        st.experimental_rerun()  # Fallback for older versions
