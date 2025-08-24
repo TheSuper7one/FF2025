@@ -22,7 +22,8 @@ def normalize_name(name):
     if not isinstance(name, str):
         return ""
     name = name.lower()
-    name = ''.join(c for c in unicodedata.normalize('NFD', name) if unicodedata.category(c) != 'Mn')
+    name = ''.join(c for c in unicodedata.normalize('NFD', name)
+                   if unicodedata.category(c) != 'Mn')
     name = re.sub(r"[^\w\s]", "", name)
     return re.sub(r"\s+", " ", name).strip()
 
@@ -45,6 +46,7 @@ def get_sleeper_players():
 def load_default_rankings():
     return pd.read_csv(GITHUB_RAW_URL)
 
+@st.cache_data(show_spinner=False)
 def parse_rankings(df):
     blocks = {"OVERALL": 0, "QB": 5, "RB": 10, "WR": 15, "TE": 20, "DEF": 25, "K": 30}
     all_players, valid_positions, debug_rows = [], [], []
@@ -67,26 +69,23 @@ def extract_draft_id(url_or_id):
     m = re.search(r"draft/(?:nfl/)?(\d+)", url_or_id)
     return m.group(1) if m else url_or_id.strip()
 
-@st.cache_data(ttl=3, show_spinner=False)
-def fetch_raw_picks_json(draft_id):
+# --- Live draft pick fetching with short TTL cache ---
+@st.cache_data(ttl=REFRESH_INTERVAL, show_spinner=False)
+def fetch_drafted_ids(draft_id):
+    """Return a list of player_ids that have been drafted so far."""
     url = f"https://api.sleeper.app/v1/draft/{draft_id}/picks"
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=5)
         if r.status_code == 200:
-            return r.json()
+            return [p.get("player_id") for p in r.json() if "player_id" in p]
     except Exception as e:
         st.warning(f"Error fetching picks: {e}")
     return []
 
-@st.cache_data(ttl=3, show_spinner=False)
-def fetch_drafted_ids(draft_id):
-    data = fetch_raw_picks_json(draft_id)
-    return [p.get("player_id") for p in data if "player_id" in p]
-
 # --- Inputs ---
 draft_url = st.text_input("Sleeper Draft ID or URL (optional for live sync)")
 
-# --- Load rankings ---
+# --- Load rankings from GitHub ---
 try:
     raw_df = load_default_rankings()
     st.caption("📂 Loaded default rankings from GitHub")
@@ -99,7 +98,10 @@ if raw_df is not None:
     rankings, debug_table = parse_rankings(raw_df)
     rankings["norm_name"] = rankings["Player"].apply(apply_alias)
     rankings["NFL Team"] = rankings["NFL Team"].fillna("").astype(str).str.upper()
-    sleeper_df = get_sleeper_players()
+
+    if "sleeper_players" not in st.session_state:
+        st.session_state["sleeper_players"] = get_sleeper_players()
+    sleeper_df = st.session_state["sleeper_players"]
 
     # Strict match
     strict = rankings.merge(
@@ -108,7 +110,6 @@ if raw_df is not None:
         right_on=["norm_name", "Sleeper_Pos", "Sleeper_Team"],
         how="left"
     )
-
     # Relaxed match
     unmatched_mask = strict["Sleeper_ID"].isna()
     if unmatched_mask.any():
@@ -119,15 +120,14 @@ if raw_df is not None:
             how="left"
         )
         strict.loc[unmatched_mask, "Sleeper_ID"] = relaxed["Sleeper_ID"].values
-
     merged = strict
 
     # Position filter buttons
     positions = st.session_state.get("valid_positions", [])
     if positions:
+        cols = st.columns(len(positions))
         if "active_pos" not in st.session_state:
             st.session_state.active_pos = positions[0]
-        cols = st.columns(len(positions))
         for i, pos in enumerate(positions):
             if cols[i].button(pos):
                 st.session_state.active_pos = pos
@@ -137,31 +137,51 @@ if raw_df is not None:
     active = st.session_state.active_pos
     filtered = merged[merged["Source_Pos"] == active].copy()
     filtered["has_id"] = filtered["Sleeper_ID"].notna().astype(int)
-    filtered = filtered.sort_values(by=["has_id", "Rank"], ascending=[False, True]).drop_duplicates(subset=["norm_name"], keep="first").drop(columns=["has_id"])
+    filtered = filtered.sort_values(by=["has_id", "Rank"], ascending=[False, True])
+    filtered = filtered.drop_duplicates(subset=["norm_name"], keep="first").drop(columns=["has_id"])
 
+    # Draft sync
     draft_id = extract_draft_id(draft_url) if draft_url else None
     drafted_ids = fetch_drafted_ids(draft_id) if draft_id else []
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
-    visible_df = filtered[~filtered["Drafted"]].copy().rename(columns={"Sheet_Pos": "Pos"})
 
-    # Text color mapping matching Sleeper
-    pos_text_colors = {"WR": "blue", "RB": "green", "QB": "red", "TE": "orange", "DEF": "white", "K": "white"}
+    # Hide drafted players entirely
+    visible_df = filtered[~filtered["Drafted"]].copy()
+    visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
+
+    # --- Position-based text color mapping ---
+    pos_text_colors = {
+        "RB": "darkred",
+        "WR": "darkgreen",
+        "QB": "#66b2ff",
+        "TE": "violet",
+        "DEF": "white",
+        "K": "white"
+    }
+
     def style_player_column(df):
-        return df.style.apply(lambda col: [f"color: {pos_text_colors.get(pos,'black')}; font-weight: bold" if col.name=="Player" else "" for pos in df["Pos"]], axis=0)
+        return df.style.apply(
+            lambda col: [
+                f"color: {pos_text_colors.get(pos, 'black')}; font-weight: bold" if col.name == "Player" else ""
+                for pos in df["Pos"]
+            ],
+            axis=0
+        )
 
     rows_to_show = 15
     row_height_px = 35
     styled_df = style_player_column(visible_df[["Rank", "Player", "Pos", "NFL Team"]])
-    st.dataframe(styled_df, use_container_width=True, height=rows_to_show * row_height_px)
+
+    st.dataframe(styled_df,
+                 use_container_width=True,
+                 height=rows_to_show * row_height_px)
 
     if draft_url.strip():
         st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
 
-    # --- Debug section (restores live sync behavior) ---
     with st.expander("📋 Debug Info"):
         if draft_url.strip():
             st.write("🛠 DEBUG — Parsed Draft ID:", draft_id)
-            st.write("🛠 DEBUG — Raw /picks JSON:", fetch_raw_picks_json(draft_id))
             st.write("🛠 DEBUG — Drafted IDs from Sleeper:", drafted_ids)
         st.table(debug_table)
 
@@ -170,14 +190,15 @@ if raw_df is not None:
         unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
         with st.expander("⚠️ Players not matched to Sleeper IDs"):
             st.write(unmatched[["Player", "Pos", "NFL Team"]])
-
 else:
     st.info("No rankings available — check GitHub URL.")
 
-# --- Auto-rerun for live sync ---
+# --- Auto-refresh without sleep ---
 if draft_url.strip():
-    time.sleep(REFRESH_INTERVAL)
-    try:
-        st.rerun()  # Newer Streamlit versions
-    except AttributeError:
-        st.experimental_rerun()  # Fallback for older versions
+    if "last_refresh" not in st.session_state:
+        st.session_state["last_refresh"] = time.time()
+    now = time.time()
+    if now - st.session_state["last_refresh"] > REFRESH_INTERVAL:
+        st.session_state["last_refresh"] = now
+        st.experimental_rerun()
+
