@@ -139,20 +139,23 @@ if raw_df is not None and not raw_df.empty:
 
     if not visible_df.empty:
         visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
-        visible_df = visible_df[["Rank", "Player", "Pos", "NFL Team"]].reset_index(drop=True)
+        visible_df = visible_df.loc[:, ["Rank", "Player", "Pos", "NFL Team"]].reset_index(drop=True)
 
         # Player color mapping (Sleeper style)
         pos_text_colors = {"WR": "blue", "RB": "green", "QB": "red", "TE": "orange", "DEF": "white", "K": "white"}
-        def style_player_column(df):
-            return df.style.apply(lambda col: [
-                f"color: {pos_text_colors.get(pos,'black')}; font-weight: bold" if col.name == 'Player' else ''
-                for pos in df['Pos']
-            ], axis=0)
 
-        rows_to_show = 15
-        row_height_px = 35
+        def style_player_column(df):
+            if df.empty:
+                return df
+            return df.style.apply(
+                lambda col: [
+                    f"color: {pos_text_colors.get(pos,'black')}; font-weight: bold" if col.name == 'Player' else ''
+                    for pos in df['Pos']
+                ], axis=0
+            )
+
         styled_df = style_player_column(visible_df)
-        st.dataframe(styled_df, use_container_width=True, height=rows_to_show * row_height_px)
+        st.dataframe(styled_df, use_container_width=True, height=15 * 35)
     else:
         st.info("All players for this position have been drafted.")
 
