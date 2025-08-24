@@ -142,7 +142,7 @@ if not raw_df.empty:
     filtered["Drafted"] = filtered["Sleeper_ID"].isin(drafted_ids)
     visible_df = filtered[~filtered["Drafted"]].copy()
     visible_df = visible_df.rename(columns={"Sheet_Pos": "Pos"})
-    visible_df.reset_index(drop=True, inplace=True)  # <-- Reset index to remove weird 0 Player row
+    visible_df.reset_index(drop=True, inplace=True)  # Reset index to remove extra top row
 
     # Text color mapping
     pos_text_colors = {"RB": "darkred", "WR": "darkgreen", "QB": "#66b2ff", "TE": "violet", "DEF": "white", "K": "white"}
@@ -151,7 +151,7 @@ if not raw_df.empty:
         return df.style.apply(
             lambda col: [f"color: {pos_text_colors.get(pos, 'black')}; font-weight: bold" if col.name == "Player" else "" for pos in df["Pos"]],
             axis=0
-        )
+        ).hide(axis="index")  # Hide index column
 
     rows_to_show = 15
     row_height_px = 35
@@ -162,13 +162,6 @@ if not raw_df.empty:
         st.caption(f"🔄 Auto-refreshing every {REFRESH_INTERVAL} seconds…")
         if last_sync:
             st.caption(f"⏱️ Last synced with Sleeper at {last_sync}")
-
-    # Only show unmatched players
-    unmatched = merged[merged["Sleeper_ID"].isna()].drop_duplicates(subset=["norm_name"])
-    if not unmatched.empty:
-        unmatched = unmatched.rename(columns={"Sheet_Pos": "Pos"})
-        with st.expander("⚠️ Players not matched to Sleeper IDs"):
-            st.write(unmatched[["Player", "Pos", "NFL Team"]])
 
 else:
     st.info("No rankings available — check GitHub URL.")
